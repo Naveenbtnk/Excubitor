@@ -1,0 +1,49 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --color-brand-rose: #b23b4c;
+  --color-brand-cream: #f5efea;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+:root {
+  --bg: #f5efea;
+  --ink: #1a1a1a;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-black/5 bg-white/75 shadow-sm backdrop-blur-sm;
+  }
+
+  .pill-nav {
+    @apply inline-flex items-center rounded-full border border-black/5 bg-white/70 p-1 shadow-sm backdrop-blur-sm;
+  }
+
+  .pill {
+    @apply rounded-full px-3 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:text-neutral-900 sm:text-sm;
+  }
+
+  .pill-active {
+    @apply bg-neutral-900 text-white hover:text-white;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-brand-rose/40 focus:ring-2 focus:ring-brand-rose/10;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-full border border-black/10 bg-white/70 px-4 py-2 text-sm font-medium text-neutral-800 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50;
+  }
+}
