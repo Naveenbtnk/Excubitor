@@ -68,7 +68,14 @@ from app.models import User  # noqa: E402
 from app.services import llm as llm_module  # noqa: E402
 from app.services.llm.base import LLMProvider, Message, StructuredModel  # noqa: E402
 
-TABLES = ("post_mortems", "runbook_chunks", "incidents", "alerts", "users")
+TABLES = (
+    "incident_events",
+    "post_mortems",
+    "runbook_chunks",
+    "incidents",
+    "alerts",
+    "users",
+)
 
 # Password for accounts the RBAC tests create; anything hashed the same way is fine.
 TEST_USER_PASSWORD = "Role-Test-Passw0rd!"

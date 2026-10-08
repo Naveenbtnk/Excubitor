@@ -7,6 +7,7 @@ CloudOps AI is an AIOps dashboard for alert simulation, Gemini-powered incident 
 - **Alert simulation and incident triage** — generate realistic alerts, then have Gemini triage one into an incident using pgvector-retrieved runbook context.
 - **Streaming Sandbox** — answers arrive token by token over SSE, with a Stop control that keeps the partial answer, and failures reported as a sentence the user can act on rather than the provider's payload.
 - **Multi-worker-safe rate limiting and quota** — per-user request limits and the project-wide provider budget are enforced through a single counter store, so every worker shares one ceiling instead of multiplying it. With `REDIS_URL` set the counters live in Redis and hold across the whole deployment; without it they stay in-process, and an unreachable Redis degrades to the local worker's own counters rather than failing open. See [Rate limiting](#rate-limiting) and [Provider budget](#provider-budget).
+- **Incident timeline** — every status change, assignment and comment is recorded with who did it and when, and rendered as a timeline on the incident's own page, so an incident has a history rather than only a current status. See [Incident timeline](#incident-timeline).
 - **Alertmanager ingestion** — `POST /webhooks/alertmanager` accepts a real Prometheus Alertmanager notification group behind a shared token, creating one alert per entry so a firing group and its resolutions arrive as they happened. See [Alert ingestion](#alert-ingestion).
 - **Provider resilience** — retries with full jitter, per-attempt and stream-idle timeouts, and quota failures classified apart from momentary rate limits so the wait it reports is the real one.
 - **Runbooks and post-mortems** — index operational runbooks with embeddings and generate markdown post-mortems from incidents.
@@ -137,6 +138,61 @@ bare array:
 `limit` and `offset` are query parameters, bounded by `PAGINATION_DEFAULT_LIMIT` and
 `PAGINATION_MAX_LIMIT`. Lists are ordered by `created_at` with an `id` tiebreaker so pages are
 stable and never overlap.
+
+### Incident timeline
+
+An incident carries an append-only log of what happened to it. Nothing updates or deletes an
+entry, so the timeline is a record rather than a rendering of current state.
+
+| Route | Role | What it does |
+| --- | --- | --- |
+| `GET /incidents/{id}` | any | The incident, including its `assignee` |
+| `GET /incidents/{id}/activity` | any | The timeline, oldest first |
+| `PATCH /incidents/{id}` | operator | Sets `status` and/or `assignee`, recording what changed |
+| `POST /incidents/{id}/comments` | operator | Adds a comment to the timeline |
+
+```bash
+curl -X PATCH http://localhost:8010/incidents/1 \
+  -H "Content-Type: application/json" -b cookies.txt \
+  -d '{"status": "mitigated", "assignee": "night-ops@cloudops.local"}'
+
+curl -X POST http://localhost:8010/incidents/1/comments \
+  -H "Content-Type: application/json" -b cookies.txt \
+  -d '{"body": "Failover completed, watching error rates."}'
+```
+
+Entries read forwards -- oldest first, which is the one list in the API that does. Every other
+one is a queue whose newest entry matters most; a timeline is read the way it happened.
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "kind": "created",
+      "actor": "admin@cloudops.local",
+      "from_value": null,
+      "to_value": "triage",
+      "body": "Created by AI triage from the alert “Database pool exhaustion”, with 75% confidence.",
+      "created_at": "2026-10-08T09:12:45.101Z"
+    }
+  ],
+  "total": 1, "limit": 50, "offset": 0, "has_more": false
+}
+```
+
+`kind` is one of `created`, `status`, `assignee`, `comment` or `post_mortem`. `from_value` and
+`to_value` hold the old and new value for the two kinds that change something, which is what lets
+a reader see the diff without parsing the sentence in `body`; both are `null` for a comment.
+
+A change writes an event only when something actually changes: re-saving the same status is a
+`200` with no entry, because a log people read to find out what happened should not fill up with
+no-ops. `actor` is the email of whoever acted, so the history survives that account being renamed.
+Implementing a `PATCH` as "assignee absent means leave it, `null` means unassign" is deliberate:
+the two have to be distinguishable or changing a status would unassign somebody.
+
+Triage writes the first entry, and generating a post-mortem writes the last one (it resolves the
+incident). The incident list on the Post-Mortems page links to each incident's timeline.
 
 ### Alert ingestion
 
@@ -280,7 +336,9 @@ reachability and reports the remaining provider budget (both are public, for orc
 3. Add operational runbooks in Knowledge to enrich future triage.
 4. Point Alertmanager at `POST /webhooks/alertmanager` and alerts arrive without anyone clicking
    **Simulate** — see [Alert ingestion](#alert-ingestion).
-5. Generate a markdown post-mortem from the incident list.
+5. Open an incident's **Timeline** to see who changed what, comment on it, reassign it, and move
+   its status forward — see [Incident timeline](#incident-timeline).
+6. Generate a markdown post-mortem from the incident list.
 
 ## Known limitations
 

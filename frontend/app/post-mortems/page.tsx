@@ -1,6 +1,7 @@
 "use client";
 
 import { FileText, Sparkles } from "lucide-react";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useState } from "react";
@@ -63,24 +64,31 @@ export default function PostMortemsPage() {
         <div className="card divide-y divide-black/5 overflow-hidden">
           {incidents.length === 0 && <div className="p-8 text-center text-sm text-neutral-500">No incidents yet. Triage an alert first.</div>}
           {incidents.map((incident) => (
-            <button
-              key={incident.id}
-              onClick={() => generate(incident.id)}
-              disabled={!mayOperate}
-              title={mayOperate ? undefined : needsRole("operator")}
-              className="w-full p-4 text-left transition hover:bg-white/60 disabled:cursor-not-allowed"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">{incident.title}</div>
-                  <div className="mt-1 line-clamp-2 text-xs text-neutral-500">{incident.summary}</div>
+            <div key={incident.id} className="grid gap-1 p-4 transition hover:bg-white/60 sm:grid-cols-[1fr_auto] sm:items-start sm:gap-3">
+              <button
+                onClick={() => generate(incident.id)}
+                disabled={!mayOperate}
+                title={mayOperate ? undefined : needsRole("operator")}
+                className="min-w-0 text-left disabled:cursor-not-allowed"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">{incident.title}</div>
+                    <div className="mt-1 line-clamp-2 text-xs text-neutral-500">{incident.summary}</div>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-1 text-[10px] uppercase tracking-widest text-neutral-600">
+                    {incident.status}
+                  </span>
                 </div>
-                <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-1 text-[10px] uppercase tracking-widest text-neutral-600">
-                  {incident.status}
-                </span>
-              </div>
-              {loading === incident.id && <div className="mt-2 text-xs text-brand-rose">Generating…</div>}
-            </button>
+                {loading === incident.id && <div className="mt-2 text-xs text-brand-rose">Generating…</div>}
+              </button>
+              <Link
+                href={`/incidents/${incident.id}`}
+                className="shrink-0 self-start text-xs text-brand-rose underline-offset-2 hover:underline"
+              >
+                Timeline
+              </Link>
+            </div>
           ))}
           <LoadMore
             className="px-4 py-3"

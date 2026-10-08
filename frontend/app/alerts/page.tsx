@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCircle2, Sparkles } from "lucide-react";
+import Link from "next/link";
 import useSWR from "swr";
 import { useState } from "react";
 import { LoadMore } from "@/components/LoadMore";
@@ -157,7 +158,15 @@ export default function AlertsPage() {
         <div className="card mt-5 p-4 sm:p-5">
           <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-semibold">AI Recommendation · {incident.title}</h2>
-            <span className="text-xs text-neutral-500">Confidence {Math.round(incident.confidence * 100)}%</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-neutral-500">Confidence {Math.round(incident.confidence * 100)}%</span>
+              <Link
+                href={`/incidents/${incident.id}`}
+                className="shrink-0 text-xs text-brand-rose underline-offset-2 hover:underline"
+              >
+                Open timeline
+              </Link>
+            </div>
           </div>
           <div className="mb-3 text-sm text-neutral-600">{incident.summary}</div>
           <div className="mb-3 rounded-xl bg-white p-3 text-sm text-neutral-700">Root cause: {incident.root_cause}</div>
