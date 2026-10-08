@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     admin_email: str = "admin@cloudops.local"
     admin_password: str = "ChangeMe123!"
 
+    # Shared secret for the Alertmanager webhook, which has no user behind it. Empty means the
+    # route answers 503 rather than accepting anything: an unconfigured deployment must not be
+    # an open write route.
+    alertmanager_webhook_token: str = ""
+
     llm_max_retries: int = 2
     llm_retry_base_delay: float = 0.5
     llm_retry_max_delay: float = 8.0

@@ -13,6 +13,7 @@ from app.api.routes import (
     overview,
     sandbox,
     users,
+    webhooks,
 )
 from app.core.config import settings
 from app.core.counter_store import close_counter_stores
@@ -93,6 +94,9 @@ def create_app() -> FastAPI:
     app.include_router(sandbox.router)
     app.include_router(incidents.router)
     app.include_router(users.router)
+    # Registered like any other router, but authenticated by shared token rather than a
+    # session cookie: the caller is Alertmanager, which has no user to check a role against.
+    app.include_router(webhooks.router)
     return app
 
 

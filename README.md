@@ -7,6 +7,7 @@ CloudOps AI is an AIOps dashboard for alert simulation, Gemini-powered incident 
 - **Alert simulation and incident triage** — generate realistic alerts, then have Gemini triage one into an incident using pgvector-retrieved runbook context.
 - **Streaming Sandbox** — answers arrive token by token over SSE, with a Stop control that keeps the partial answer, and failures reported as a sentence the user can act on rather than the provider's payload.
 - **Multi-worker-safe rate limiting and quota** — per-user request limits and the project-wide provider budget are enforced through a single counter store, so every worker shares one ceiling instead of multiplying it. With `REDIS_URL` set the counters live in Redis and hold across the whole deployment; without it they stay in-process, and an unreachable Redis degrades to the local worker's own counters rather than failing open. See [Rate limiting](#rate-limiting) and [Provider budget](#provider-budget).
+- **Alertmanager ingestion** — `POST /webhooks/alertmanager` accepts a real Prometheus Alertmanager notification group behind a shared token, creating one alert per entry so a firing group and its resolutions arrive as they happened. See [Alert ingestion](#alert-ingestion).
 - **Provider resilience** — retries with full jitter, per-attempt and stream-idle timeouts, and quota failures classified apart from momentary rate limits so the wait it reports is the real one.
 - **Runbooks and post-mortems** — index operational runbooks with embeddings and generate markdown post-mortems from incidents.
 
@@ -137,6 +138,55 @@ bare array:
 `PAGINATION_MAX_LIMIT`. Lists are ordered by `created_at` with an `id` tiebreaker so pages are
 stable and never overlap.
 
+### Alert ingestion
+
+`POST /webhooks/alertmanager` takes Prometheus Alertmanager's webhook payload (`webhook_configs`
+`send_resolved: true`) and turns each entry of `alerts[]` into a row in the alert list.
+
+It is authenticated by a shared token, not a session: the caller is Prometheus, which has no
+cookie and no role. Send the token from `ALERTMANAGER_WEBHOOK_TOKEN` in the `X-API-Key` header, and
+compare it in constant time server-side. An **unset** token answers `503` — "not configured" —
+rather than accepting the request, so a deployment that has not been set up for ingestion is never
+an open write route; a missing or wrong token answers `401`. An empty `alerts[]` is a valid request
+and creates nothing.
+
+```yaml
+# alertmanager.yml
+receivers:
+  - name: cloudops-ai
+    webhook_configs:
+      - url: http://backend:8010/webhooks/alertmanager
+        send_resolved: true
+        http_config:
+          authorization:
+            type: APIKey
+            credentials_file: /etc/alertmanager/cloudops.token  # the ALERTMANAGER_WEBHOOK_TOKEN value
+```
+
+```bash
+curl -X POST http://localhost:8010/webhooks/alertmanager \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $ALERTMANAGER_WEBHOOK_TOKEN" \
+  -d '{"version":"4","status":"firing","alerts":[{"status":"firing","labels":{"alertname":"PostgresPoolExhausted","instance":"orders-api-5f9c:9187","job":"postgres-exporter","severity":"critical"},"annotations":{"summary":"Pool above 95%"},"startsAt":"2026-10-08T09:12:44Z","generatorURL":"http://prometheus:9090/graph"}]}'
+```
+
+The response reports what was created, so Alertmanager's logs and ours can be lined up:
+
+```json
+{ "accepted": 1, "opened": 1, "resolved": 0, "alert_ids": [7] }
+```
+
+| Alertmanager | Our alert field |
+| --- | --- |
+| `labels.alertname`, plus `labels.instance` when present (`HighCPU on node-3:9100`) | `title` |
+| `labels.severity`, lower-cased; defaults to `warning` | `severity` |
+| `labels.job`, else `labels.cluster`, else `alertmanager` | `source` |
+| `annotations.summary` and `annotations.description`, then `labels`, `startsAt`, `generatorURL`, `externalURL` | `detail` |
+| alert `status: firing` (or anything unrecognised) → `open`; `resolved` → `resolved` | `status` |
+
+The **per-alert** status is what is read, not the group's: a group is `firing` as a whole even when
+one of its alerts has just recovered, and collapsing them would hide which one did.
+
 ### Rate limiting
 
 The routes that spend money on the provider are limited per authenticated user, per route group:
@@ -228,7 +278,20 @@ reachability and reports the remaining provider budget (both are public, for orc
    Ask the Sandbox a question and the answer arrives token by token, with a **Stop** button that
    keeps whatever was generated so far.
 3. Add operational runbooks in Knowledge to enrich future triage.
-4. Generate a markdown post-mortem from the incident list.
+4. Point Alertmanager at `POST /webhooks/alertmanager` and alerts arrive without anyone clicking
+   **Simulate** — see [Alert ingestion](#alert-ingestion).
+5. Generate a markdown post-mortem from the incident list.
+
+## Known limitations
+
+- **Webhook ingestion does not dedupe yet.** Alertmanager re-sends a group on every
+  `repeat_interval` and again when it resolves, and each delivery creates new alert rows, so a
+  long-firing alert appears once per notification. `POST /webhooks/alertmanager` accepts the
+  fingerprint field and ignores it. Coalescing on it needs one decision first — whether a
+  `resolved` notification should close the original row or reopen it — and that is a design call
+  rather than a missing line of code, so it is not half-implemented here. Until then, treat the
+  alert list as a delivery log rather than a current-state table. The behaviour is pinned by
+  `test_a_repeated_delivery_creates_the_alerts_again` so a fix has something to change.
 
 ## Continuous integration
 
