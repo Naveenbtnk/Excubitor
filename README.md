@@ -2,6 +2,14 @@
 
 CloudOps AI is an AIOps dashboard for alert simulation, Gemini-powered incident triage, pgvector-backed runbook retrieval, and AI-generated post-mortems.
 
+## Features
+
+- **Alert simulation and incident triage** — generate realistic alerts, then have Gemini triage one into an incident using pgvector-retrieved runbook context.
+- **Streaming Sandbox** — answers arrive token by token over SSE, with a Stop control that keeps the partial answer, and failures reported as a sentence the user can act on rather than the provider's payload.
+- **Multi-worker-safe rate limiting and quota** — per-user request limits and the project-wide provider budget are enforced through a single counter store, so every worker shares one ceiling instead of multiplying it. With `REDIS_URL` set the counters live in Redis and hold across the whole deployment; without it they stay in-process, and an unreachable Redis degrades to the local worker's own counters rather than failing open. See [Rate limiting](#rate-limiting) and [Provider budget](#provider-budget).
+- **Provider resilience** — retries with full jitter, per-attempt and stream-idle timeouts, and quota failures classified apart from momentary rate limits so the wait it reports is the real one.
+- **Runbooks and post-mortems** — index operational runbooks with embeddings and generate markdown post-mortems from incidents.
+
 ## Stack
 
 - Next.js 16, React 19, Tailwind CSS 4, SWR, React Markdown
