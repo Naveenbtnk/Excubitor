@@ -19,6 +19,7 @@ dependencies = [
     "pwdlib[argon2]>=0.3,<1",
     "sse-starlette>=3.4,<4",
     "python-multipart>=0.0.20",
+    "redis>=6,<7",
 ]
 
 [project.optional-dependencies]

@@ -10,6 +10,8 @@ another request as far as the provider is concerned.
 """
 
 import asyncio
+import json
+import re
 from collections.abc import AsyncIterator
 
 import pytest
@@ -122,37 +124,38 @@ def test_the_default_budget_matches_the_provider_free_tier():
     assert Settings(llm_provider="gemini", llm_quota_limit=0).effective_llm_quota_limit == 0
 
 
-def test_the_budget_refuses_the_call_once_the_allowance_is_spent(clock):
+async def test_the_budget_refuses_the_call_once_the_allowance_is_spent(clock):
     subject = quota(limit=2)
 
-    assert subject.reserve() is None
-    assert subject.reserve() is None
-    assert subject.reserve() == 3601, "the whole window is still ahead of the oldest hit"
+    assert await subject.reserve() is None
+    assert await subject.reserve() is None
+    assert await subject.reserve() == 3601, "the whole window is still ahead of the oldest hit"
 
     clock[0] += 3601
-    assert subject.reserve() is None, "capacity comes back once the oldest hit ages out"
+    assert await subject.reserve() is None, "capacity returns once the oldest hit ages out"
 
 
-def test_the_snapshot_reports_the_remaining_allowance(clock):
+async def test_the_snapshot_reports_the_remaining_allowance(clock):
     subject = quota(limit=5)
 
-    assert subject.snapshot() == QuotaSnapshot(
+    assert await subject.snapshot() == QuotaSnapshot(
         limit=5, used=0, remaining=5, window_seconds=3600, resets_in=0
     )
 
-    subject.reserve()
-    subject.reserve()
-    assert (subject.snapshot().used, subject.snapshot().remaining) == (2, 3)
+    await subject.reserve()
+    await subject.reserve()
+    assert ((await subject.snapshot()).used, (await subject.snapshot()).remaining) == (2, 3)
 
     clock[0] += 3601
-    assert (subject.snapshot().used, subject.snapshot().remaining) == (0, 5)
+    assert ((await subject.snapshot()).used, (await subject.snapshot()).remaining) == (0, 5)
 
 
-def test_a_disabled_budget_never_refuses_and_has_no_snapshot():
+async def test_a_disabled_budget_never_refuses_and_has_no_snapshot():
     for subject in (quota(limit=0), quota(limit=5, window_seconds=0)):
         assert not subject.enabled
-        assert subject.snapshot() is None
-        assert [subject.reserve() for _ in range(50)] == [None] * 50
+        assert await subject.snapshot() is None
+        for _ in range(50):
+            assert await subject.reserve() is None
 
 
 # --- the guard -------------------------------------------------------------------------
@@ -179,7 +182,7 @@ async def test_health_probes_are_exempt_from_the_budget():
     guarded = QuotaGuardedProvider(ChatStub(), subject)
 
     assert await guarded.health() == "ok"
-    assert subject.snapshot().used == 0, "a monitoring loop must not spend the allowance"
+    assert (await subject.snapshot()).used == 0, "a monitoring loop must not spend the allowance"
 
 
 async def test_a_stream_nobody_consumes_claims_nothing():
@@ -187,7 +190,7 @@ async def test_a_stream_nobody_consumes_claims_nothing():
     guarded = QuotaGuardedProvider(ChatStub(), subject)
 
     stream = guarded.stream(HELLO)
-    assert subject.snapshot().used == 0
+    assert (await subject.snapshot()).used == 0
     await stream.aclose()
 
 
@@ -201,7 +204,7 @@ async def test_replayed_attempts_are_charged_too(no_sleep):
 
     assert await wrapped.chat(HELLO) == "ok"
     assert provider.calls == 2, "the first attempt was replayed"
-    assert subject.snapshot().used == 2, "one unit per upstream attempt, not per call"
+    assert (await subject.snapshot()).used == 2, "one unit per upstream attempt, not per call"
 
 
 async def test_a_spent_budget_stops_a_retry_mid_call(no_sleep):
@@ -226,7 +229,7 @@ async def test_a_replayed_stream_claims_one_unit_per_attempt(no_sleep):
 
     assert chunks == ["recovered"]
     assert provider.streams == 2
-    assert subject.snapshot().used == 2
+    assert (await subject.snapshot()).used == 2
 
 
 async def test_the_built_provider_charges_the_configured_budget(monkeypatch, no_sleep):
@@ -236,7 +239,7 @@ async def test_the_built_provider_charges_the_configured_budget(monkeypatch, no_
 
     assert await build_provider(provider).chat(HELLO) == "ok"
 
-    snapshot = current_quota().snapshot()
+    snapshot = await current_quota().snapshot()
     assert (snapshot.used, snapshot.remaining) == (2, 1)
 
 
@@ -255,6 +258,7 @@ def test_the_budget_is_charged_inside_the_retry_wrapper(monkeypatch):
 async def test_health_reports_the_remaining_budget(client: AsyncClient, monkeypatch):
     monkeypatch.setattr(settings, "llm_quota_limit", 20)
     monkeypatch.setattr(settings, "llm_quota_window_seconds", 86400)
+    monkeypatch.setattr(settings, "redis_url", "")
 
     response = await client.get("/health/llm")
 
@@ -265,11 +269,13 @@ async def test_health_reports_the_remaining_budget(client: AsyncClient, monkeypa
         "remaining": 20,
         "window_seconds": 86400,
         "resets_in": 0,
+        "store": "memory",
     }
 
 
 async def test_a_disabled_budget_is_reported_as_absent(client: AsyncClient, monkeypatch):
     monkeypatch.setattr(settings, "llm_quota_limit", 0)
+    monkeypatch.setattr(settings, "redis_url", "")
 
     response = await client.get("/health/llm")
 
@@ -292,7 +298,11 @@ async def test_chat_route_answers_503_with_the_wait_that_is_left(
 
     assert refused.status_code == 503
     assert int(refused.headers["Retry-After"]) >= 86400, "the real wait, not a 60s guess"
-    assert "refused locally" in refused.json()["detail"]
+    # Presented as an allowance that resets, not as a local code path: the setting an operator
+    # would turn is named in the logs, and `budget_exhausted` tells a UI which wording to use.
+    assert refused.json()["error"]["code"] == "budget_exhausted"
+    assert "used up its Gemini call allowance for now" in refused.json()["detail"]
+    assert "LLM_QUOTA_LIMIT" not in refused.text
 
 
 async def test_a_stream_refused_mid_response_ends_with_an_error_event(
@@ -312,7 +322,13 @@ async def test_a_stream_refused_mid_response_ends_with_an_error_event(
     stream = await authed_client.post("/sandbox/stream", json={"message": "refused"})
 
     assert stream.status_code == 200, "the status line was already sent"
-    assert "refused locally" in stream.text
+    match = re.search(r"data: (\{.*\})", stream.text)
+    assert match, stream.text
+    frame = json.loads(match.group(1))
+    assert frame["code"] == "budget_exhausted"
+    assert "used up its Gemini call allowance for now" in frame["message"]
+    assert int(frame["retry_after"]) >= 86400
+    assert "LLM_QUOTA_LIMIT" not in stream.text
     assert stream.text.index("event: error") < stream.text.index("event: done")
 
 
@@ -327,7 +343,11 @@ async def test_a_stream_that_breaks_after_output_ends_with_an_error_event(
     assert stream.status_code == 200
     # The token that did arrive is delivered exactly once, and the failure is announced.
     assert stream.text.count("partial") == 1
-    assert "stream broke mid-flight" in stream.text
+    match = re.search(r"data: (\{.*\})", stream.text)
+    assert match, stream.text
+    assert json.loads(match.group(1))["code"] == "unavailable"
+    # The upstream text ("stream broke mid-flight") is a log line, not a response body.
+    assert "stream broke mid-flight" not in stream.text
     assert stream.text.index("event: error") < stream.text.index("event: done")
 
 
@@ -348,7 +368,7 @@ async def test_one_request_that_embeds_many_chunks_is_charged_per_call(
 
     assert response.status_code == 503, response.text
     assert provider.calls == 2, "the third chunk was refused before it was sent"
-    assert current_quota().snapshot().remaining == 0
+    assert (await current_quota().snapshot()).remaining == 0
 
     # A refused chunk must not leave half a runbook behind.
     listed = await authed_client.get("/knowledge/runbooks")

@@ -13,6 +13,7 @@ from app.services.llm.base import (
     Message,
     StructuredModel,
 )
+from app.services.llm.errors import kind_for_wait
 from app.services.llm.retry import (
     AttemptTimeouts,
     classify_http_error,
@@ -57,10 +58,16 @@ def translate_error(exc: Exception) -> LLMError:
     # may be absent depending on which transport raised.
     candidates = (getattr(exc, "code", None), getattr(exc, "status", None))
     if any(requires_backoff(candidate) for candidate in candidates):
+        # The wait we extract is also the classification: Gemini answers both its per-minute
+        # limits and its exhausted daily quota with 429, and reading the quota metadata to tell
+        # them apart would mean holding material that must never be shown to a user. See
+        # `kind_for_wait`.
+        hint = retry_hint_from_payload(error_body(exc))
         return LLMTransientError(
             str(exc),
             replayable=False,
-            retry_after=retry_hint_from_payload(error_body(exc)),
+            retry_after=hint,
+            kind=kind_for_wait(hint),
         )
     if any(is_retryable_status(candidate) for candidate in candidates):
         return LLMTransientError(str(exc))

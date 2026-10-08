@@ -24,3 +24,16 @@ async def test_stream_emits_sse_chunks(authed_client: AsyncClient):
 async def test_stream_requires_a_session(client: AsyncClient):
     response = await client.post("/sandbox/stream", json={"message": "hello"})
     assert response.status_code == 401
+
+
+async def test_stream_forbids_transforming_proxies(authed_client: AsyncClient):
+    """Regression: the dashboard runs behind the Next.js server, which gzips responses.
+
+    A gzip encoder buffers until it has a block to emit, so every token was held until the
+    generation finished and the stream arrived as one lump. `no-transform` is what tells the
+    proxy to leave the body alone; without it the endpoint looks wrong only in a browser, since
+    browsers always send `Accept-Encoding` and curl does not.
+    """
+    response = await authed_client.post("/sandbox/stream", json={"message": "hello"})
+
+    assert response.headers["cache-control"] == "no-store, no-transform"

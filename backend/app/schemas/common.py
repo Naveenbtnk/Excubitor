@@ -65,6 +65,7 @@ class HealthResponse(BaseModel):
     status: str
     provider: str
     database: str
+    counters: str
 
 
 class LLMQuotaStatus(BaseModel):
@@ -76,6 +77,9 @@ class LLMQuotaStatus(BaseModel):
     remaining: int
     window_seconds: int
     resets_in: int
+    # "memory" means these numbers are this worker's alone, so the real ceiling is
+    # ``workers x limit``; "redis" means every worker is drawing on the same allowance.
+    store: str
 
 
 class LLMHealthResponse(BaseModel):

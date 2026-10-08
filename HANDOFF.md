@@ -436,3 +436,156 @@ inside a minute spent the whole day's allowance, and every later caller got `503
   steps, none of them started: per-method budgets once the real per-method quotas are verified
   rather than assumed, a shared budget in Redis/Postgres, and surfacing `quota.remaining` in the
   dashboard so an operator sees the ceiling coming.
+
+## 11. Session update — the repo, and shared counters (Redis)
+
+Two things this session: the project finally became a Git repository of its own, and the
+ceilings §10 added stopped being per-worker.
+
+**A repository at last.** The project had no history of its own — it sat untracked inside the
+home-directory repo at `C:/Users/navee`, which has zero commits and thousands of unrelated
+staged paths. `git init -b main` here, then one commit of 96 files (10,164 insertions). The
+parent repo was left untouched and that was *verified*, not assumed: `md5sum` of
+`C:/Users/navee/.git/index` (`b547609e…`) and `.git/HEAD` (`4cf2d64e…`) is identical before and
+after, and it still reports no commits. Nothing was pushed; there is no remote. The nine
+sensitive-or-generated paths stay excluded (`backend/.env`, `frontend/.env.local`, `.venv`,
+`node_modules`, caches), so the first commit contains only the three `.env.example` templates.
+Note for whoever runs `git add` in the home directory later: git will now warn about a nested
+repository here, and the fix is to leave it alone rather than add it as a gitlink.
+
+**Counters moved behind a store** (`app/core/counter_store.py`). Both ceilings — the per-user
+rate limit in `app/services/ratelimit.py` and the provider budget in
+`app/services/llm/quota.py` — now go through one interface with two backends:
+
+- `MemoryCounterStore` keeps the old behaviour exactly (per window length, one
+  `SlidingWindowLimiter` each) and remains the default when `REDIS_URL` is empty. Single worker,
+  local runs and the default test suite are unaffected.
+- `RedisCounterStore` puts the window in Redis: a Lua script prunes a sorted set, counts it and
+  claims a slot in one atomic step, using the *server's* `TIME` so worker clock skew cannot
+  stretch or shorten a window. Atomicity is the whole point — two workers reading "19 used" and
+  both writing 20 is how a shared 20/day budget quietly becomes 40/day.
+- **An unreachable Redis degrades instead of failing open.** The store falls back to its own
+  process-local counters and logs one throttled warning a minute, so the ceiling narrows to the
+  worker that noticed rather than disappearing. `test_an_unreachable_redis_degrades_to_this_worker`
+  pins it: still limited, just locally.
+- `async` punctuation: `reserve()`, `snapshot()` and the limiter dependency are now awaited.
+  `QuotaGuardedProvider._claim` became async with them; no behaviour changed.
+- **Health visibility** — `GET /health` gained `counters` (`ok`, `unconfigured` with no Redis, or
+  the reason it is unreachable) and the `/health/llm` quota block gained `store`, which is the
+  field that tells you whether those numbers mean anything deployment-wide. The Redis probe runs
+  on every `/health` call, so an orchestrator healthcheck also notices a lost Redis.
+- **Enforced at the interface, not just in unit tests.** Docker runs with
+  `REDIS_URL=redis://redis:6379/0`. A *separate process* inside the container claimed three calls,
+  and the API server — a different process — then reported `used: 3, remaining: 17, store: redis`,
+  with the sorted set visible in `redis-cli`. That is the multi-worker claim, demonstrated on the
+  real stack rather than argued.
+- **Tests** — `backend/tests/test_counter_store.py` adds 10, taking the suite to **146 passing**
+  with ruff clean. They cover the in-memory path (including the window-per-instance rule that
+  would otherwise erase the day-long budget), the limitation Redis exists to remove (two memory
+  stores cannot share a ceiling — pinned as a deliberate contrast so the contrast cannot rot), two
+  workers sharing one ceiling, **exactly 5 of 30 concurrent claims granted across three stores**,
+  window expiry on the server clock, the degraded path, a route drawing on a budget spent by
+  another worker, and both health fields including the unreachable case. They skip with a reason
+  when no Redis answers rather than reporting an unearned pass; CI runs a `redis:7-alpine` service
+  so they run there, and `docker compose up -d redis` provides one locally.
+- **Compose and CI** — a `redis` service (no persistence: these are windows, not data) with a
+  healthcheck the backend waits on, `REDIS_URL` on the backend, and `REDIS_PORT`/`REDIS_*`
+  documented in `.env.example`. `redis>=6,<7` was added to `backend/pyproject.toml` — it was not a
+  dependency before, so the venv, the image and CI all needed it.
+
+## 12. Session update — the Sandbox streams, and the bug that only a browser could show
+
+The Sandbox page used the blocking `POST /sandbox/chat`. It now streams from
+`POST /sandbox/stream`, which already existed and had no consumer.
+
+- **The client** (`frontend/lib/stream.ts`) reads the response body as bytes and splits it into
+  SSE frames. `EventSource` cannot be used: it only issues GET requests and this endpoint takes a
+  JSON body. Handled explicitly: `CRLF` frame endings, `:` keep-alive comments, multi-line `data`
+  fields, a multi-byte character split across two network chunks, and the distinction between a
+  refusal that arrives with a status code (rate limit before the first byte) and one that arrives
+  as an `error` event (after it). The `done` frame is tracked, so a stream that ends without one is
+  reported instead of being shown as a finished answer.
+- **The page** (`frontend/app/sandbox/page.tsx`) appends tokens as they arrive, shows a caret while
+  the answer is live, and offers **Stop** in place of Send while streaming. Stopping aborts the
+  fetch: the partial answer is kept, and the two cases are distinguished — "Stopped before any
+  output." when nothing had arrived yet, and the partial text plus a note when it had. Quota
+  refusals and provider failures render as an amber note naming the setting to change, rather than
+  as a generic error or a silent truncation.
+- **A real bug, visible only in a browser.** The stream worked in `next dev` and in every curl
+  probe, and arrived in one lump in the production build. The Next.js server gzips responses by
+  default, and a gzip encoder buffers until it has a block to emit, so all tokens were held until
+  the generation finished. Browsers always send `Accept-Encoding: gzip`; curl does not — which is
+  why the probes kept passing. The response now sets `Cache-Control: no-store, no-transform` (the
+  spec's instruction to leave the body alone, and what Next's compression honours), verified at
+  the header level and again in the browser. `test_stream_forbids_transforming_proxies` pins it.
+  Worth remembering: this class of bug cannot be caught by testing the API, only by testing the
+  thing the user actually looks at.
+- **Verified in the browser, through the production Next server** (`npm start`, not just dev), with
+  a local stub provider standing in for a working model — the Gemini free tier is still exhausted,
+  and no test may spend real quota. Confirmed: partial text on screen while the answer was still
+  being generated; both stop branches; the `done` path; and the refusal note once the shared budget
+  was spent. The stub lives outside the repository, in the OS temp directory, and is not part of
+  the project.
+- **Tests** — one added for the header, taking the suite to **147 passing** with ruff clean.
+- **Two things this changed for callers** — `frontend/lib/api.ts` grew `toApiError()` so the stream
+  client and the JSON client explain failures the same way (the API's `detail` beats "503 Service
+  Unavailable"), and the Sandbox no longer calls `/sandbox/chat`. That endpoint stays: it is the
+  documented non-streaming interface and it is still covered by its tests.
+
+## 13. Session update — the provider's words stop at the server
+
+The Sandbox still showed a raw Gemini 429 in its error note: about a kilobyte of JSON naming the
+quota metric, the quota id, the model, the project and a docs URL. Useful to an operator, noise in
+a chat bubble, and project metadata to anyone else. The provider's own text now stops at the
+server, and what reaches the browser is a sentence we wrote.
+
+- **One projection point** (`backend/app/services/llm/errors.py`). `public_llm_error()` logs the
+  failure in full and returns the only part that may travel: a code, our own sentence, the provider
+  *name* (from our configuration, never from the payload), an optional wait and a request id.
+  Splitting log-and-project into two calls would let one of them be forgotten.
+- **A closed vocabulary** — `LLMErrorKind`: `quota_exhausted`, `budget_exhausted`, `rate_limited`,
+  `timeout`, `unavailable`, `provider_error`. `LLMError`/`LLMTransientError` now carry a `kind`
+  alongside the internal (log-only) message, and `gemini.py`/`retry.py` classify 429s with it.
+- **A quota is told from a rate limit by the wait, not the payload.** `kind_for_wait()` splits them
+  at one hour: per-minute limits ask for ~60s, the free-tier daily cap asked for ~56000s. Reading
+  the quota metadata instead would mean parsing exactly the material that must not travel.
+- **The sentence** is composed from our own configuration and the wait, and states the wait only
+  when the provider gave one — a countdown that was guessed would be worse than none. On the
+  Sandbox it reads: *"Gemini's daily quota has been reached. Sandbox responses will be available
+  again in approximately 15 hours 33 minutes. Switch to the local Ollama provider to keep working
+  in the meantime."* The switch is only offered when Ollama is actually an alternative, and the
+  local budget names itself rather than quoting `LLM_QUOTA_LIMIT`.
+- **Wire shape** — SSE `error` frames carry `data: {"code", "message", "provider",
+  "retry_after"?, "request_id"?}` (serialised with `json.dumps`, because `sse_starlette`'s encoder
+  calls `str()` on a dict and would emit an unparseable Python repr); HTTP 503/502 bodies carry the
+  sentence as `detail` and the same object as `error`. `retry_after` is absent when unknown, so a
+  client can tell "wait this long" from "no idea". 503 keeps its `Retry-After` header, and the
+  `request_id` in the payload is the same one already echoed as `x-request-id`.
+- **Frontend** — `parsePublicError()` accepts only that exact field set, so a provider payload that
+  happens to be valid JSON is still discarded; anything else is replaced with a sentence of ours.
+  The page renders the server's sentence verbatim (one source of truth for the countdown), keeps
+  the error code as a `data-error-code` attribute, and offers the request id as a small **Copy
+  diagnostic ID** action instead of printing it. A body that is not JSON is no longer echoed at
+  all — the status line stands in for it.
+- **A bug the new tests found** — `alembic/env.py` called `fileConfig()` with the default
+  `disable_existing_loggers=True`, which switches off every logger that already exists in the
+  process. Harmless for a standalone `alembic upgrade`, but the test harness migrates in-process, so
+  `cloudops.*` was silenced for the rest of the run and the "the raw detail is in the logs"
+  assertion saw zero records. Fixed at the source (`disable_existing_loggers=False`).
+- **Tests** — `backend/tests/test_llm_errors.py` (27) drives a verbatim copy of the live 429 through
+  the projection and the HTTP surface, asserting on leak markers (`generativelanguage.googleapis.com`,
+  `quotaMetric`, `ai.google.dev`, `@type`, `RetryInfo`, …) in both directions: nothing in the
+  response, the full text in the structured log line. Backend suite: **174 passing**, ruff clean.
+  Frontend moved to Vitest + React Testing Library (`frontend/lib/stream.test.ts`,
+  `frontend/app/sandbox/page.test.tsx`, **18 passing**): SSE framing (CRLF, comments, multi-line
+  data, a multi-byte character split across chunks), progressive rendering, both Stop branches, the
+  friendly quota note with and without a wait, the copy action, and a raw payload pushed through the
+  real parser and page asserting none of it appears on screen. `npm test` joined typecheck and build
+  in CI.
+- **Verified in a browser** against a stub provider outside the repository: the note rendered with
+  the countdown, the copy action reported "Copied", `data-error-code="quota_exhausted"` was set,
+  and no leak marker was anywhere in the DOM. The live Gemini free tier is still capped, so the
+  real quota path could not be exercised end to end; the raw payload used in the tests is a verbatim
+  capture from the 429 that prompted this. The CI audit step is currently red on pre-existing
+  advisories in `next@16.3.6` and `sharp@0.35.4` (both unchanged by this work; `npm audit fix`
+  covers them) and should be handled in its own commit.

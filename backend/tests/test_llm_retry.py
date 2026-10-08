@@ -631,6 +631,9 @@ async def test_chat_route_reports_503_with_retry_after_when_retries_run_out(
 
     assert response.status_code == 503
     assert "temporarily unavailable" in response.json()["detail"]
+    assert response.json()["error"]["code"] == "unavailable"
+    # The upstream wording ("503 UNAVAILABLE. overloaded") stays in the log line.
+    assert "overloaded" not in response.text
     assert response.headers["Retry-After"] == str(max(1, int(settings.llm_retry_max_delay)))
     assert provider.calls == 3
 
@@ -698,7 +701,10 @@ async def test_chat_route_answers_503_when_every_attempt_times_out(
     response = await authed_client.post("/sandbox/chat", json={"message": "hello"})
 
     assert response.status_code == 503
-    assert "attempt timeout" in response.json()["detail"]
+    assert response.json()["error"]["code"] == "timeout"
+    assert response.json()["detail"].startswith("Gemini took too long to answer.")
+    # Our own deadline phrasing is internal: it belongs in the log, not in a response.
+    assert "attempt timeout" not in response.text
     assert response.headers["Retry-After"] == str(max(1, int(settings.llm_retry_max_delay)))
     assert provider.calls == 2
 
@@ -730,5 +736,8 @@ async def test_chat_route_keeps_502_for_a_permanent_provider_error(
     response = await authed_client.post("/sandbox/chat", json={"message": "hello"})
 
     assert response.status_code == 502
-    assert "LLM provider error" in response.json()["detail"]
+    assert response.json()["error"]["code"] == "provider_error"
+    assert "could not complete this request" in response.json()["detail"]
+    # Missing credentials are an operator problem: logged, with a diagnostic id, not shown.
+    assert "GEMINI_API_KEY" not in response.text
     assert provider.calls == 1

@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import TypeVar
 
 from pydantic import BaseModel
@@ -13,8 +14,43 @@ class Message:
     content: str
 
 
+class LLMErrorKind(StrEnum):
+    """Why a provider call failed, in the only vocabulary safe to show a user.
+
+    A provider's own error text is diagnostic material -- it names quota metrics, project
+    ids, models and documentation URLs -- so it is never the thing an API client receives.
+    This closed set is: each implementation classifies its own failures into one of these,
+    and :mod:`app.services.llm.errors` turns the result into a sentence for a human. Adding
+    a provider means picking from this list, not inventing a new wire value; a client that
+    does not recognise a code falls back to the server's own safe message.
+    """
+
+    # The provider's own allowance is spent. Long by definition: see ``kind_for_wait``.
+    QUOTA_EXHAUSTED = "quota_exhausted"
+    # Our budget in app.services.llm.quota is spent. Distinct from the above because the
+    # remedy is different: an operator can raise LLM_QUOTA_LIMIT, nobody can raise Gemini's.
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    # A window short enough to wait out inside one session.
+    RATE_LIMITED = "rate_limited"
+    TIMEOUT = "timeout"
+    # Reachable but failing: overloaded, 5xx, a dropped socket.
+    UNAVAILABLE = "unavailable"
+    # Permanent: bad model, bad credentials, a malformed request.
+    PROVIDER_ERROR = "provider_error"
+
+
 class LLMError(RuntimeError):
-    """An LLM provider call failed in a way that is not worth re-attempting."""
+    """An LLM provider call failed in a way that is not worth re-attempting.
+
+    ``kind`` is the user-safe classification of the failure; the message stays internal and
+    is written to the logs, never to a response body.
+    """
+
+    def __init__(
+        self, message: str, *, kind: LLMErrorKind = LLMErrorKind.PROVIDER_ERROR
+    ) -> None:
+        super().__init__(message)
+        self.kind = kind
 
 
 class LLMTransientError(LLMError):
@@ -39,8 +75,9 @@ class LLMTransientError(LLMError):
         *,
         replayable: bool = True,
         retry_after: float | None = None,
+        kind: LLMErrorKind = LLMErrorKind.UNAVAILABLE,
     ) -> None:
-        super().__init__(message)
+        super().__init__(message, kind=kind)
         self.replayable = replayable
         self.retry_after = retry_after
 

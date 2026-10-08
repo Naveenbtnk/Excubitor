@@ -36,11 +36,13 @@ import httpx
 from app.core.config import Settings, settings
 from app.services.llm.base import (
     LLMError,
+    LLMErrorKind,
     LLMProvider,
     LLMTransientError,
     Message,
     StructuredModel,
 )
+from app.services.llm.errors import kind_for_wait
 from app.services.llm.quota import ProviderQuota
 
 logger = logging.getLogger("cloudops.llm")
@@ -147,10 +149,12 @@ def classify_http_error(exc: httpx.HTTPError) -> LLMError:
     if isinstance(exc, httpx.HTTPStatusError):
         status = exc.response.status_code
         if requires_backoff(status):
+            hint = parse_retry_after(exc.response.headers.get("retry-after"))
             return LLMTransientError(
                 str(exc),
                 replayable=False,
-                retry_after=parse_retry_after(exc.response.headers.get("retry-after")),
+                retry_after=hint,
+                kind=kind_for_wait(hint),
             )
         if is_retryable_status(status):
             return LLMTransientError(str(exc))
@@ -259,11 +263,11 @@ class QuotaGuardedProvider(LLMProvider):
         system: str | None = None,
         response_model: type[StructuredModel] | None = None,
     ) -> str | StructuredModel:
-        self._claim("chat")
+        await self._claim("chat")
         return await self.inner.chat(messages, system=system, response_model=response_model)
 
     async def embed(self, text: str) -> list[float]:
-        self._claim("embed")
+        await self._claim("embed")
         return await self.inner.embed(text)
 
     async def stream(
@@ -271,20 +275,23 @@ class QuotaGuardedProvider(LLMProvider):
     ) -> AsyncIterator[str]:
         # An async generator body runs on the first pull, which is when the request is
         # really opened: a stream nobody consumes claims nothing.
-        self._claim("stream")
+        await self._claim("stream")
         async for chunk in self.inner.stream(messages, system=system):
             yield chunk
 
-    def _claim(self, operation: str) -> None:
-        wait = self.quota.reserve()
+    async def _claim(self, operation: str) -> None:
+        wait = await self.quota.reserve()
         if wait is None:
             return
+        # The message is for the logs: it names the setting an operator would turn. The kind
+        # is what a user sees, and says only that this app's allowance is spent.
         raise LLMTransientError(
             f"{operation} refused locally: all {self.quota.limit} calls allowed per "
             f"{self.quota.window_seconds}s for {self.quota.key} are spent. Raise "
             "LLM_QUOTA_LIMIT to allow more calls, or set it to 0 to stop counting.",
             replayable=False,
             retry_after=wait,
+            kind=LLMErrorKind.BUDGET_EXHAUSTED,
         )
 
 
@@ -395,7 +402,9 @@ class RetryingProvider(LLMProvider):
     @staticmethod
     def _timed_out(operation: str, timeout: float) -> LLMTransientError:
         return LLMTransientError(
-            f"{operation} exceeded the {timeout:g}s attempt timeout", replayable=True
+            f"{operation} exceeded the {timeout:g}s attempt timeout",
+            replayable=True,
+            kind=LLMErrorKind.TIMEOUT,
         )
 
     def _log_retry(

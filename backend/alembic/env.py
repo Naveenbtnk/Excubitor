@@ -12,8 +12,12 @@ from app.models import Alert, Incident, PostMortem, RunbookChunk, User
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
+# ``disable_existing_loggers=False`` matters when migrations run inside a process that
+# already configured logging (the test harness, or app startup): the default turns off every
+# logger that exists before this call, which would silently silence the application's own
+# ``cloudops.*`` loggers for the rest of the process.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

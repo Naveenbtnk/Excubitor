@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     llm_quota_limit: int | None = None
     llm_quota_window_seconds: int = 24 * 60 * 60
 
+    # Backend for the shared counters. Empty keeps them in-process, which is correct for a
+    # single worker and invisible to every other one, making the real ceiling
+    # ``workers x limit``. Point this at Redis whenever more than one worker serves traffic.
+    redis_url: str = ""
+    redis_key_prefix: str = "cloudops"
+    redis_timeout_seconds: float = 2.0
+
     pagination_default_limit: int = 50
     pagination_max_limit: int = 200
 

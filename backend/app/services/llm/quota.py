@@ -6,6 +6,9 @@ tier allows 20 ``generateContent`` requests per day, per project, per model, so 
 user following a per-minute limit can spend the entire day's allowance inside a minute and
 leave every later caller staring at a provider 429 that lasts for hours.
 
+The counters live behind :mod:`app.core.counter_store`, so a budget of 20 is 20 for the whole
+deployment once ``REDIS_URL`` is set, not 20 per worker.
+
 Counting happens per *attempt*, inside the retry wrapper, because that is the unit the
 provider bills:
 
@@ -21,16 +24,7 @@ whatever the account really allows, or set it to ``0`` to stop counting.
 from dataclasses import dataclass
 
 from app.core.config import Settings, settings
-from app.core.window import SlidingWindowLimiter
-
-# Its own instance: the provider window is a day, the per-user limiter's is a minute, and a
-# shared instance would prune one against the other's window.
-_budget = SlidingWindowLimiter()
-
-
-def reset_quota() -> None:
-    """Drop every counter, for tests that need a fresh allowance."""
-    _budget.reset()
+from app.core.counter_store import get_counter_store
 
 
 @dataclass(frozen=True)
@@ -64,17 +58,17 @@ class ProviderQuota:
     def enabled(self) -> bool:
         return self.limit > 0 and self.window_seconds > 0
 
-    def reserve(self) -> int | None:
+    async def reserve(self) -> int | None:
         """Claim one upstream call. Returns the wait in seconds when the budget is spent."""
         if not self.enabled:
             return None
-        return _budget.check(self.key, self.limit, self.window_seconds)
+        return await get_counter_store().check(self.key, self.limit, self.window_seconds)
 
-    def snapshot(self) -> QuotaSnapshot | None:
+    async def snapshot(self) -> QuotaSnapshot | None:
         """Current allowance, or ``None`` when the budget is disabled."""
         if not self.enabled:
             return None
-        used, resets_in = _budget.state(self.key, self.window_seconds)
+        used, resets_in = await get_counter_store().state(self.key, self.window_seconds)
         return QuotaSnapshot(
             limit=self.limit,
             used=used,

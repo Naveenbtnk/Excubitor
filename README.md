@@ -7,6 +7,7 @@ CloudOps AI is an AIOps dashboard for alert simulation, Gemini-powered incident 
 - Next.js 16, React 19, Tailwind CSS 4, SWR, React Markdown
 - FastAPI, async SQLAlchemy, Alembic
 - PostgreSQL 16 with pgvector
+- Redis 7 for the counters behind the rate limit and the provider budget (optional)
 - Gemini (`gemini-3.8-flash` and `gemini-embedding-001`)
 - JWT authentication in an httpOnly cookie
 - Docker Compose for the full local production stack
@@ -31,6 +32,7 @@ Services:
 | API | `http://localhost:8010` |
 | API health | `http://localhost:8010/health` |
 | PostgreSQL / pgvector | `localhost:5434` |
+| Redis | `localhost:6379` |
 
 Connect pgAdmin using host `localhost`, port `5434`, database `cloudops_ai`, user `cloudops`, password `cloudops`.
 
@@ -91,6 +93,12 @@ $env:TEST_DATABASE_URL = "postgresql+asyncpg://cloudops:cloudops@localhost:5434/
 The suite replaces the LLM provider with a deterministic offline fake, so tests never call a
 paid API.
 
+The tests that prove the rate limit and the provider budget hold *across workers* need a real
+Redis, because that is the only thing that can prove it. They look for one at `TEST_REDIS_URL`
+(default `redis://localhost:6379/15`) and skip with a reason when none answers, rather than
+reporting a pass they did not earn. `docker compose up -d redis` provides one; CI runs a service
+container so the shared-ceiling guarantee is exercised on every push.
+
 ## Security
 
 - Gemini is only called from FastAPI; the API key is never sent to the browser.
@@ -119,8 +127,14 @@ stable and never overlap.
 The routes that spend money on the provider are limited per authenticated user, per route group:
 `LLM_RATE_LIMIT` requests per `RATE_LIMIT_WINDOW_SECONDS` for chat, streaming, runbook query,
 triage and post-mortems, and `EMBEDDING_RATE_LIMIT` for runbook indexing. Exceeding a budget
-returns `429` with a `Retry-After` header. The counter is in-process, so the effective ceiling is
-`workers x limit`; move it to a shared store before scaling beyond one process per replica.
+returns `429` with a `Retry-After` header.
+
+The counters live behind `REDIS_URL`. Left unset they stay in the process, which is correct for
+one worker but makes the real ceiling `workers x limit` — three workers granting 20 requests a
+minute is 60 a minute. Docker Compose sets `REDIS_URL`, so the stack you get from
+`docker compose up` enforces one ceiling for the whole deployment. A Redis that becomes
+unreachable narrows the limit to the worker that noticed rather than removing it: a shared
+ceiling that quietly disappears under load is worse than a stricter one that only covers itself.
 
 These limits bound how fast one user may ask for work. They say nothing about whether the account
 can afford it, which is a project-wide question: see the provider budget below.
@@ -141,14 +155,24 @@ quota to protect. Set `LLM_QUOTA_LIMIT=0` to stop counting or raise it to match 
 together, which is deliberately conservative — Gemini meters those methods separately, and
 refusing a call we might have got away with is cheaper than discovering the ceiling mid-demo.
 
+Like the rate limit, the budget is only as real as the counters behind it, and with `REDIS_URL`
+set it is one allowance for the whole deployment rather than one per worker.
+
 A spent budget returns `503` with a `Retry-After` for the wait that is genuinely left: the same
 contract as an upstream `429`, except it fires *before* the request is sent instead of after the
 provider refuses it. `GET /health/llm` reports the allowance as
-`quota: {limit, used, remaining, window_seconds, resets_in}` so an approaching ceiling is visible
-before it is hit; the probe itself is exempt, so monitoring cannot spend the budget it reports.
+`quota: {limit, used, remaining, window_seconds, resets_in, store}` so an approaching ceiling is
+visible before it is hit; the probe itself is exempt, so monitoring cannot spend the budget it
+reports.
 On `POST /sandbox/stream` the `200` and SSE headers are already committed when the first token is
 pulled, so a refusal there is delivered as a terminal `error` event followed by `done` — a
 started response cannot be rewritten into a `503`.
+
+That stream also sets `Cache-Control: no-transform`, and it is load-bearing rather than
+housekeeping. The dashboard runs behind the Next.js server, which compresses responses by
+default; a gzip encoder buffers until it has a block to emit, so every token was held until the
+generation finished and arrived as one lump. Browsers always send `Accept-Encoding` and curl does
+not, so this failure is invisible to every convenient test and obvious only in the real one.
 
 ### Provider resilience
 
@@ -178,13 +202,16 @@ duplicate a paid request.
 Logs are structured JSON on stdout. Every request emits one `http_request` line with
 `request_id`, `method`, `path`, `status`, `duration_ms` and `user_id`; the same id is returned in
 the `X-Request-ID` response header and honoured if the caller supplies one. `GET /health` checks
-PostgreSQL connectivity and `GET /health/llm` probes provider reachability and reports the
-remaining provider budget (both are public, for orchestrator probes).
+PostgreSQL connectivity and reports the counter backend as `counters` (`ok`, `unconfigured` when
+no Redis is configured, or why it is unreachable), and `GET /health/llm` probes provider
+reachability and reports the remaining provider budget (both are public, for orchestrator probes).
 
 ## Product flows
 
 1. Simulate an alert on Overview or Alerts.
 2. Select **AI Triage** to create an incident using relevant runbook context.
+   Ask the Sandbox a question and the answer arrives token by token, with a **Stop** button that
+   keeps whatever was generated so far.
 3. Add operational runbooks in Knowledge to enrich future triage.
 4. Generate a markdown post-mortem from the incident list.
 

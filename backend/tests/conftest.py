@@ -60,12 +60,11 @@ from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
+from app.core.counter_store import get_counter_store  # noqa: E402
 from app.db.session import SessionLocal, seed_admin  # noqa: E402
 from app.main import app  # noqa: E402
 from app.services import llm as llm_module  # noqa: E402
 from app.services.llm.base import LLMProvider, Message, StructuredModel  # noqa: E402
-from app.services.llm.quota import reset_quota  # noqa: E402
-from app.services.ratelimit import limiter  # noqa: E402
 
 TABLES = ("post_mortems", "runbook_chunks", "incidents", "alerts", "users")
 
@@ -160,10 +159,10 @@ async def clean_database() -> AsyncIterator[None]:
         await session.execute(text(f"TRUNCATE {', '.join(TABLES)} RESTART IDENTITY CASCADE"))
         await session.commit()
     await seed_admin()
-    limiter.reset()
-    # Without this the provider budget would be shared across the whole session and tests
-    # late in the run would start being refused instead of exercising their own subject.
-    reset_quota()
+    # Both ceilings draw on the same store, so one reset covers the per-user limits and the
+    # provider budget. Without it the budget would be shared across the whole session and
+    # tests late in the run would be refused instead of exercising their own subject.
+    await get_counter_store().reset()
     yield
 
 

@@ -32,14 +32,27 @@ PROTECTED_ROUTES = [
 ]
 
 
-async def test_health_is_public(client: AsyncClient):
+async def test_health_is_public(client: AsyncClient, monkeypatch):
+    # Pinned to the in-process store so the assertion does not depend on the machine having
+    # a Redis: the shared-store case is covered in test_counter_store.py.
+    monkeypatch.setattr(settings, "redis_url", "")
+
     response = await client.get("/health")
+
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "provider": "gemini", "database": "ok"}
+    assert response.json() == {
+        "status": "ok",
+        "provider": "gemini",
+        "database": "ok",
+        "counters": "unconfigured",
+    }
 
 
-async def test_llm_health_is_public_and_reports_provider(client: AsyncClient):
+async def test_llm_health_is_public_and_reports_provider(client: AsyncClient, monkeypatch):
+    monkeypatch.setattr(settings, "redis_url", "")
+
     response = await client.get("/health/llm")
+
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
@@ -54,6 +67,7 @@ async def test_llm_health_is_public_and_reports_provider(client: AsyncClient):
             "remaining": settings.effective_llm_quota_limit,
             "window_seconds": settings.llm_quota_window_seconds,
             "resets_in": 0,
+            "store": "memory",
         },
     }
 

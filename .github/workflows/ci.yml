@@ -28,9 +28,21 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      # The tests that prove the rate limit and provider budget hold across workers need a
+      # real server; without it they skip rather than pass.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
     env:
       # The integration suite creates and migrates cloudops_ai_test on this server.
       TEST_DATABASE_URL: postgresql+asyncpg://cloudops:cloudops@localhost:5432/cloudops_ai_test
+      TEST_REDIS_URL: redis://localhost:6379/15
     steps:
       - uses: actions/checkout@v4
 
@@ -72,6 +84,10 @@ jobs:
       - name: Typecheck
         working-directory: frontend
         run: npm run typecheck
+
+      - name: Tests
+        working-directory: frontend
+        run: npm test
 
       # Blocks on high/critical only. Two moderate findings remain in
       # @tailwindcss/typography -> postcss-selector-parser, whose only "fix" is a forced

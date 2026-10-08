@@ -5,10 +5,8 @@ These limits bound how fast one user may ask for work. They are *not* a provider
 them. That accounting lives in :mod:`app.services.llm.quota`, which counts upstream
 attempts instead of HTTP requests.
 
-The limiter is an in-process sliding window: it costs no extra infrastructure, but each
-Gunicorn worker keeps its own counters, so the effective ceiling is
-``workers x limit``. Move the counter to a shared store (Redis, Postgres) before running
-more than one process behind a load balancer.
+The counters live behind :mod:`app.core.counter_store`, so with ``REDIS_URL`` set the
+ceiling is shared by every worker rather than multiplied by the number of them.
 """
 
 from collections.abc import Awaitable, Callable
@@ -17,13 +15,10 @@ from fastapi import Depends, HTTPException, status
 
 from app.api.deps import get_current_user
 from app.core.config import settings
-from app.core.window import SlidingWindowLimiter
+from app.core.counter_store import get_counter_store
 from app.models import User
 
-__all__ = ["SlidingWindowLimiter", "limiter", "rate_limit"]
-
-# One window length per instance; see the note in app.core.window.
-limiter = SlidingWindowLimiter()
+__all__ = ["rate_limit"]
 
 
 def rate_limit(scope: str, limit_setting: str) -> Callable[..., Awaitable[None]]:
@@ -31,7 +26,7 @@ def rate_limit(scope: str, limit_setting: str) -> Callable[..., Awaitable[None]]
 
     async def dependency(user: User = Depends(get_current_user)) -> None:
         limit = int(getattr(settings, limit_setting))
-        retry_after = limiter.check(
+        retry_after = await get_counter_store().check(
             f"{scope}:{user.id}", limit, settings.rate_limit_window_seconds
         )
         if retry_after is None:
