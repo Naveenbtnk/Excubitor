@@ -56,20 +56,25 @@ export default function AlertsPage() {
   const [incident, setIncident] = useState<Incident | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Every write on this page is an Operator action, so each one re-checks the role before it
+  // sends: the disabled attribute is a courtesy, and this is what stops a forced event from
+  // producing a request the API would only refuse with a 403.
   async function simulate(scenario: string) {
-    if (!scenario) return;
+    if (!mayOperate || !scenario) return;
     setError(null);
     await api("/alerts/simulate", { method: "POST", body: JSON.stringify({ scenario }) });
     await mutate();
   }
 
   async function acknowledge(id: number) {
+    if (!mayOperate) return;
     setError(null);
     await api(`/alerts/${id}/ack`, { method: "POST" });
     await mutate();
   }
 
   async function triage(id: number) {
+    if (!mayOperate) return;
     setTriaging(id);
     setIncident(null);
     setError(null);

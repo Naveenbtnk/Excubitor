@@ -39,6 +39,9 @@ export default function PostMortemsPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function generate(id: number) {
+    // Generating spends provider budget and resolves the incident, so it re-checks the role
+    // rather than trusting the disabled attribute alone.
+    if (!mayOperate) return;
     setLoading(id);
     setError(null);
     try {

@@ -49,7 +49,9 @@ export default function KnowledgePage() {
   const [error, setError] = useState<string | null>(null);
 
   async function add() {
-    if (!title.trim() || !content.trim()) return;
+    // Indexing spends embedding budget and changes the shared corpus, so it needs the same
+    // role the route does; asking a question stays open to every role.
+    if (!mayOperate || !title.trim() || !content.trim()) return;
     setBusy(true);
     setError(null);
     try {
@@ -96,8 +98,22 @@ export default function KnowledgePage() {
         <div className="card p-4 sm:p-5">
           <h2 className="mb-3 font-semibold">Add runbook</h2>
           {!mayOperate && <p className="mb-2 text-xs text-neutral-500">{needsRole("operator")}</p>}
-          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Runbook title, e.g. database pool exhaustion" className="input mb-2" disabled={!mayOperate} />
-          <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="Paste runbook markdown or text here…" className="input min-h-[220px] resize-y" disabled={!mayOperate} />
+          <input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="Runbook title, e.g. database pool exhaustion"
+            className="input mb-2"
+            disabled={!mayOperate}
+            title={mayOperate ? undefined : needsRole("operator")}
+          />
+          <textarea
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            placeholder="Paste runbook markdown or text here…"
+            className="input min-h-[220px] resize-y"
+            disabled={!mayOperate}
+            title={mayOperate ? undefined : needsRole("operator")}
+          />
           <button onClick={add} disabled={busy || !mayOperate} title={mayOperate ? undefined : needsRole("operator")} className="btn-primary mt-3 gap-2">
             <UploadCloud size={15} />
             {busy ? "Indexing…" : "Index runbook"}

@@ -38,6 +38,9 @@ export default function OverviewPage() {
   const { data: scenarios } = useSWR<Scenarios>("/alerts/scenarios", fetcher);
 
   async function simulate(scenario: string) {
+    // The control is disabled for anyone below Operator; returning here means a forced event
+    // cannot send a request the UI has decided not to offer. The API refuses it regardless.
+    if (!mayOperate || !scenario) return;
     await api("/alerts/simulate", {
       method: "POST",
       body: JSON.stringify({ scenario: scenario || null }),
