@@ -42,12 +42,23 @@ async def seed_admin() -> None:
 
 
 async def seed_demo_alerts() -> None:
+    """Three invented alerts, so a fresh database is not an empty screen."""
     async with SessionLocal() as session:
         has_alerts = await session.scalar(select(Alert.id).limit(1))
         if has_alerts:
             return
         session.add_all(Alert(**scenario) for scenario in SCENARIOS[:3])
         await session.commit()
+
+
+async def seed_demo_data() -> None:
+    """Seed the demo alerts unless the deployment has turned them off.
+
+    Split out from the call site so the decision is one function with a name, rather than an
+    `if` in the lifespan that has to be read to find out what it does.
+    """
+    if settings.should_seed_demo_data:
+        await seed_demo_alerts()
 
 
 async def close_db() -> None:

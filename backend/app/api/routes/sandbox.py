@@ -3,6 +3,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.api.deps import require_role
 from app.core.config import settings
+from app.core.errors import public_internal_error
 from app.core.observability import request_id_of
 from app.core.rbac import Role
 from app.models import User
@@ -64,6 +65,16 @@ async def stream(
                 provider=settings.llm_provider,
                 request_id=request_id,
                 operation="sandbox.stream",
+            )
+            yield {"event": "error", "data": public.to_json()}
+        except Exception as exc:
+            # Anything unexpected, from a bug here to a database that went away mid-answer. The
+            # status line and the SSE headers are already on the wire, so raising would reset
+            # the connection with a traceback on the server and nothing at all for the reader.
+            # The traceback is logged against the request id; the terminal event carries the
+            # sentence and that id, which is the same contract as a 500 on a JSON route.
+            public = public_internal_error(
+                exc, request_id=request_id, operation="sandbox.stream"
             )
             yield {"event": "error", "data": public.to_json()}
         yield {"event": "done", "data": ""}

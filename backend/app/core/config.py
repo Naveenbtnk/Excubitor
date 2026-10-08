@@ -9,7 +9,9 @@ class Settings(BaseSettings):
 
     app_name: str = "CloudOps AI"
     environment: str = "development"
-    api_prefix: str = "/api"
+    # Off unless a development run asks for it. In production it would return tracebacks to
+    # callers, so the startup guard refuses to start with it on.
+    debug: bool = False
 
     database_url: str = "postgresql+asyncpg://cloudops:cloudops@localhost:5434/cloudops_ai"
 
@@ -66,7 +68,20 @@ class Settings(BaseSettings):
     pagination_default_limit: int = 50
     pagination_max_limit: int = 200
 
+    # Demo alerts on an empty database, so a fresh checkout has something to look at. Left
+    # unset it follows the environment: on outside production, off inside it, because a
+    # production incident list that begins with three invented incidents is worse than an
+    # empty one. Set it explicitly to override either way.
+    seed_demo_data: bool | None = None
+
     log_level: str = "INFO"
+
+    @computed_field
+    @property
+    def should_seed_demo_data(self) -> bool:
+        if self.seed_demo_data is not None:
+            return self.seed_demo_data
+        return not self.is_production
 
     @computed_field
     @property

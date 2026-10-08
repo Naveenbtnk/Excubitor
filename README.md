@@ -12,6 +12,29 @@ CloudOps AI is an AIOps dashboard for alert simulation, Gemini-powered incident 
 - **Provider resilience** — retries with full jitter, per-attempt and stream-idle timeouts, and quota failures classified apart from momentary rate limits so the wait it reports is the real one.
 - **Runbooks and post-mortems** — index operational runbooks with embeddings and generate markdown post-mortems from incidents.
 
+## Architecture
+
+```
+Browser ──HTTPS──▶ reverse proxy ──▶ Next.js (3000) ──/api/*──▶ FastAPI (8000) ──▶ PostgreSQL 16 + pgvector
+                                          │                            └──▶ Redis (counters, optional)
+                                          └── renders the dashboard         └──▶ Gemini (server-side only)
+
+Alertmanager ──POST /webhooks/alertmanager (X-API-Key)──▶ FastAPI
+```
+
+The dashboard never talks to the database or the provider. Next.js proxies `/api/*` to the API,
+which keeps the session cookie first-party, keeps the Gemini key out of the browser entirely, and
+means the only thing that needs to be published is the frontend. The API is a stateless
+Gunicorn/Uvicorn process; PostgreSQL holds the only durable state, and Redis holds the counters
+behind the rate limits and the provider budget.
+
+Reads and writes all pass through one FastAPI dependency that resolves the caller's role, so the
+UI is a convenience layer rather than the control: hiding a button spares a click, and the route
+decides what happens.
+
+For the operational side — proxy configuration, secrets, sizing, backups — see
+[DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## Stack
 
 - Next.js 16, React 19, Tailwind CSS 4, SWR, React Markdown
@@ -22,17 +45,44 @@ CloudOps AI is an AIOps dashboard for alert simulation, Gemini-powered incident 
 - JWT authentication in an httpOnly cookie
 - Docker Compose for the full local production stack
 
-## Run with Docker
+## Quickstart
 
-1. Copy `backend/.env.example` to `backend/.env`.
-2. Set `GEMINI_API_KEY` and replace `JWT_SECRET` and `ADMIN_PASSWORD` with strong values.
-3. Start the stack:
+Requirements: Docker with Compose, and a Gemini API key (or `LLM_PROVIDER=ollama` against a local
+runtime — nothing else needs a paid account).
 
-   ```bash
-   docker compose up --build
-   ```
+```bash
+# 1. Configuration. Every setting is documented in the file itself.
+cp backend/.env.example backend/.env
 
-4. Open `http://localhost:3000` and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `backend/.env`.
+# 2. The three values that matter. Generate the secret; do not invent one by hand.
+python -c "import secrets; print(secrets.token_urlsafe(48))"   # -> JWT_SECRET
+#    ADMIN_PASSWORD  -> the login you will use below
+#    GEMINI_API_KEY  -> from aistudio.google.com (server-side only, never sent to a browser)
+
+# 3. Start everything: PostgreSQL + pgvector, Redis, the API and the dashboard.
+docker compose up --build -d
+
+# 4. Wait for health, then look at it. The database is migrated on first boot.
+until curl -fsS http://localhost:8010/health > /dev/null; do sleep 2; done
+curl -fsS http://localhost:8010/health | jq   # {"status":"ok","database":"ok","counters":"ok",...}
+```
+
+Open <http://localhost:3000> and sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`. From there:
+
+1. **Overview** — simulate an alert from the dropdown; it appears in the queue below.
+2. **Alerts** — run **AI Triage** on it. The recommendation appears with a link to the incident's
+   timeline.
+3. **Incident timeline** — reassign it, comment, move its status; every change is recorded with
+   your name.
+4. **Knowledge** — paste a runbook and index it, then ask a question and watch the retrieved
+   context come back with the answer.
+5. **Sandbox** — ask anything and watch the answer arrive token by token.
+6. **Post-Mortems** — generate a markdown post-mortem from an incident (this resolves it).
+
+Demo alerts appear on a fresh database outside production. Set `SEED_DEMO_DATA=false` to start
+with an empty queue instead.
+
+Going to production is a different checklist: [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Services:
 
@@ -109,6 +159,21 @@ Redis, because that is the only thing that can prove it. They look for one at `T
 reporting a pass they did not earn. `docker compose up -d redis` provides one; CI runs a service
 container so the shared-ceiling guarantee is exercised on every push.
 
+## Configuration
+
+All settings live in `backend/.env` in development and in the API's environment in production;
+`backend/.env.example` documents every one of them, and the test suite fails if a setting the code
+reads is missing from that file or listed there without being read.
+
+Two worth knowing before you start:
+
+- `ENVIRONMENT=production` enables a startup guard. A missing or still-default `JWT_SECRET`, an
+  empty `ADMIN_PASSWORD`, an empty `GEMINI_API_KEY` with `LLM_PROVIDER=gemini`, or `DEBUG=true`
+  all stop the process with a message naming what to fix. Weak-but-present values are logged as
+  `insecure_setting` and accepted — the full table is in [DEPLOYMENT.md](DEPLOYMENT.md#2-the-startup-guard).
+- `SEED_DEMO_DATA` controls the three demo alerts on an empty database. Unset it follows the
+  environment: on outside production, off inside it.
+
 ## Security
 
 - Gemini is only called from FastAPI; the API key is never sent to the browser.
@@ -121,6 +186,15 @@ container so the shared-ceiling guarantee is exercised on every push.
   Roles live in `users.role` (constrained to those three values) and are read from the row on
   every request, so a demotion takes effect on the next call rather than at the next login.
   The seeded administrator is an `admin`.
+- **A production deployment is checked before it serves anything.** A missing secret stops the
+  process at startup rather than silently defaulting to a value published in this repository; a
+  weak one is logged by name, never by value.
+- **Unexpected failures never leak internals.** An exception that escapes a route becomes a JSON
+  `500` with a stable `internal_error` code and a request id that matches the log line holding the
+  traceback, and the same contract applies inside the SSE stream, where the status line is already
+  committed. See [Error handling](#error-handling).
+- `POST /webhooks/alertmanager` is authenticated by a shared token compared in constant time, and
+  answers `503` rather than accepting anything when that token is unset.
 - Do not commit `backend/.env` or use the default credentials outside local development.
 - Set `COOKIE_SECURE=true` and restrict `CORS_ORIGINS` for HTTPS deployments.
 
@@ -318,6 +392,18 @@ delay, or the quota window for a `429`. A permanent provider failure stays `502`
 service retries: the Gemini SDK's own retry support is left disabled, so a retry can never
 duplicate a paid request.
 
+### Error handling
+
+A failure that escapes a route is projected, never forwarded. The caller receives
+`{"detail": "…", "error": {"code": "internal_error", "message": "…", "request_id": "…"}}` with a
+`500`, and the traceback goes to the `cloudops.error` log line carrying the same request id — so a
+user's screenshot is enough to find the stack, and the response itself holds nothing about the
+schema, the path or the query.
+
+On `POST /sandbox/stream` the `200` and the SSE headers are already committed when a token is
+pulled, so the same failure is delivered as a terminal `error` event followed by `done`. The
+partial answer is kept: an answer that got halfway is worth more than a reset connection.
+
 ### Observability
 
 Logs are structured JSON on stdout. Every request emits one `http_request` line with
@@ -350,6 +436,14 @@ reachability and reports the remaining provider budget (both are public, for orc
   rather than a missing line of code, so it is not half-implemented here. Until then, treat the
   alert list as a delivery log rather than a current-state table. The behaviour is pinned by
   `test_a_repeated_delivery_creates_the_alerts_again` so a fix has something to change.
+
+## Deployment
+
+[DEPLOYMENT.md](DEPLOYMENT.md) covers the rest of the path to production: generating secrets, the startup guard in full, Caddy and nginx
+configurations for HTTPS (including the stream-buffering settings a Sandbox needs), Gunicorn
+worker sizing against your PostgreSQL connection budget, private Redis, `pg_dump`/`pg_restore`
+backups and restores, upgrades, and a post-deploy checklist that ends in a real Alertmanager
+delivery.
 
 ## Continuous integration
 
