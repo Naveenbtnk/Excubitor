@@ -168,6 +168,21 @@ async def test_a_wrong_key_is_rejected(client: AsyncClient, configured, authed_c
     assert (await authed_client.get("/alerts")).json()["total"] == 0
 
 
+async def test_a_wrong_key_is_rejected_before_the_body_is_read(client: AsyncClient, configured):
+    """The refusal comes first: a bad key learns nothing about the payload shape."""
+    response = await client.post(
+        "/webhooks/alertmanager", json={"alerts": "not-a-list"}, headers=headers(WRONG_TOKEN)
+    )
+
+    assert response.status_code == 401
+
+    # The same body with the right key is a payload problem, as it should be.
+    accepted = await client.post(
+        "/webhooks/alertmanager", json={"alerts": "not-a-list"}, headers=headers(configured)
+    )
+    assert accepted.status_code == 422
+
+
 async def test_the_key_is_the_whole_identity_not_a_session(configured, client: AsyncClient):
     """One cookie-less client: refused on the user routes, accepted on the webhook.
 

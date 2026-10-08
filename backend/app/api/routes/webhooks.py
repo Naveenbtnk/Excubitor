@@ -27,7 +27,16 @@ from app.services.alertmanager import OPEN, RESOLVED, to_alert_rows
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 
-def _authenticate(provided: str | None) -> None:
+async def require_api_key(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> None:
+    """Reject the caller before anything parses the body.
+
+    A dependency rather than a call inside the route, because FastAPI validates the request
+    body before the endpoint body runs: an unauthenticated caller would otherwise get a schema
+    error back -- which is both an odd thing to tell someone with a wrong key and a slow way to
+    learn the shape of a private API.
+    """
     expected = settings.alertmanager_webhook_token
     if not expected:
         raise HTTPException(
@@ -37,8 +46,8 @@ def _authenticate(provided: str | None) -> None:
                 "to accept Alertmanager webhooks."
             ),
         )
-    if provided is None or not compare_digest(
-        provided.encode("utf-8"), expected.encode("utf-8")
+    if x_api_key is None or not compare_digest(
+        x_api_key.encode("utf-8"), expected.encode("utf-8")
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing API key"
@@ -54,10 +63,8 @@ def _authenticate(provided: str | None) -> None:
 async def ingest_alertmanager(
     payload: AlertmanagerWebhook,
     session: AsyncSession = Depends(get_session),
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    _: None = Depends(require_api_key),
 ) -> WebhookIngestResult:
-    _authenticate(x_api_key)
-
     rows = to_alert_rows(payload)
     alerts = [Alert(**row) for row in rows]
     if alerts:
