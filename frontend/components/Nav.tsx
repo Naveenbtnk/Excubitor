@@ -11,12 +11,14 @@ import {
   Play,
   RotateCw,
   Siren,
+  Users,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "@/lib/api";
+import { useSession, type Role } from "@/lib/session";
 
 const tabs = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
@@ -24,6 +26,9 @@ const tabs = [
   { href: "/alerts", label: "Alerts", icon: Siren },
   { href: "/knowledge", label: "Knowledge", icon: BookOpen },
   { href: "/post-mortems", label: "Post-Mortems", icon: FileText },
+  // User management is the one surface a non-admin has no use for, so the link is absent
+  // rather than disabled. The page itself refuses anyone else regardless.
+  { href: "/admin/users", label: "Users", icon: Users, role: "admin" as Role },
 ];
 
 export function Nav() {
@@ -31,6 +36,15 @@ export function Nav() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const isLogin = pathname === "/login";
+  const { user, can } = useSession();
+  const visibleTabs = tabs.filter(({ role }) => !role || can(role));
+  const initials = (user?.name ?? "")
+    .split(" ")
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 
   async function logout() {
     await api("/auth/logout", { method: "POST" });
@@ -58,7 +72,7 @@ export function Nav() {
         </Link>
 
         <nav className="pill-nav hidden lg:flex">
-          {tabs.map(({ href, label, icon: Icon }) => {
+          {visibleTabs.map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (
               <Link
@@ -74,8 +88,8 @@ export function Nav() {
         </nav>
 
         <div className="hidden items-center gap-2 lg:flex">
-          <span className="rounded-full border border-black/5 bg-white/70 px-3 py-1.5 text-xs font-medium text-neutral-600">
-            Demo
+          <span className="rounded-full border border-black/5 bg-white/70 px-3 py-1.5 text-xs font-medium capitalize text-neutral-600">
+            {user?.role ?? "…"}
           </span>
           <button
             onClick={() => router.refresh()}
@@ -86,9 +100,9 @@ export function Nav() {
           </button>
           <div className="flex items-center gap-2 rounded-full border border-black/5 bg-white/70 py-1 pl-1 pr-2">
             <div className="grid size-7 place-items-center rounded-full bg-rose-100 text-xs font-semibold text-brand-rose">
-              CA
+              {initials || "—"}
             </div>
-            <span className="text-sm">Cloud Admin</span>
+            <span className="text-sm">{user?.name ?? "Loading…"}</span>
           </div>
           <button onClick={logout} className="grid size-9 place-items-center rounded-full border border-black/5 bg-white/70 text-neutral-600" aria-label="Logout">
             <LogOut size={14} />
@@ -107,7 +121,7 @@ export function Nav() {
       {open && (
         <div className="mt-3 rounded-2xl border border-black/5 bg-white/90 p-2 shadow-sm lg:hidden">
           <nav className="grid gap-1">
-            {tabs.map(({ href, label, icon: Icon }) => {
+            {visibleTabs.map(({ href, label, icon: Icon }) => {
               const active = pathname === href;
               return (
                 <Link

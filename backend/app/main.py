@@ -4,7 +4,16 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import alerts, auth, health, incidents, knowledge, overview, sandbox
+from app.api.routes import (
+    alerts,
+    auth,
+    health,
+    incidents,
+    knowledge,
+    overview,
+    sandbox,
+    users,
+)
 from app.core.config import settings
 from app.core.counter_store import close_counter_stores
 from app.core.observability import RequestContextMiddleware, configure_logging, request_id_of
@@ -83,6 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(knowledge.router)
     app.include_router(sandbox.router)
     app.include_router(incidents.router)
+    app.include_router(users.router)
     return app
 
 

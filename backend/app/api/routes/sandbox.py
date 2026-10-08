@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, Request
 from sse_starlette.sse import EventSourceResponse
 
-from app.api.deps import get_current_user
+from app.api.deps import require_role
 from app.core.config import settings
 from app.core.observability import request_id_of
+from app.core.rbac import Role
 from app.models import User
 from app.schemas.sandbox import ChatRequest, ChatResponse
 from app.services.llm import get_llm
@@ -21,7 +22,7 @@ SYSTEM_PROMPT = (
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     payload: ChatRequest,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role(Role.OPERATOR)),
     _limit: None = Depends(rate_limit("sandbox.chat", "llm_rate_limit")),
 ):
     reply = await get_llm().chat(
@@ -35,7 +36,7 @@ async def chat(
 async def stream(
     payload: ChatRequest,
     request: Request,
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role(Role.OPERATOR)),
     _limit: None = Depends(rate_limit("sandbox.stream", "llm_rate_limit")),
 ):
     request_id = request_id_of(request.scope)

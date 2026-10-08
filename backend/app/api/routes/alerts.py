@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_role
+from app.core.rbac import Role
 from app.db.session import get_session
 from app.models import Alert, User
 from app.schemas.alerts import AlertCreate, AlertRead, SimulateAlertRequest
@@ -10,6 +11,9 @@ from app.schemas.common import Page, Pagination
 from app.services.simulator import make_alert, scenario_names
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
+
+# Creating, simulating and acknowledging alerts changes shared state, so it is an Operator
+# action; listing them is reading and stays open to every signed-in role.
 
 
 @router.get("", response_model=Page[AlertRead])
@@ -36,7 +40,7 @@ async def list_alerts(
 async def create_alert(
     payload: AlertCreate,
     session: AsyncSession = Depends(get_session),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role(Role.OPERATOR)),
 ):
     alert = Alert(**payload.model_dump())
     session.add(alert)
@@ -49,7 +53,7 @@ async def create_alert(
 async def simulate_alert(
     payload: SimulateAlertRequest | None = None,
     session: AsyncSession = Depends(get_session),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role(Role.OPERATOR)),
 ):
     alert = Alert(**make_alert(payload.scenario if payload else None))
     session.add(alert)
@@ -67,7 +71,7 @@ async def scenarios(_: User = Depends(get_current_user)):
 async def acknowledge_alert(
     alert_id: int,
     session: AsyncSession = Depends(get_session),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role(Role.OPERATOR)),
 ):
     alert = await session.get(Alert, alert_id)
     if not alert:

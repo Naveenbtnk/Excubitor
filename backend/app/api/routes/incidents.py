@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_role
+from app.core.rbac import Role
 from app.db.session import get_session
 from app.models import Alert, Incident, PostMortem, User
 from app.schemas.common import Page, Pagination
@@ -38,7 +39,7 @@ async def list_incidents(
 async def triage(
     alert_id: int,
     session: AsyncSession = Depends(get_session),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role(Role.OPERATOR)),
     _limit: None = Depends(rate_limit("incidents.triage", "llm_rate_limit")),
 ):
     alert = await session.get(Alert, alert_id)
@@ -71,7 +72,7 @@ async def get_post_mortem(
 async def generate_post_mortem(
     incident_id: int,
     session: AsyncSession = Depends(get_session),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role(Role.OPERATOR)),
     _limit: None = Depends(rate_limit("incidents.post_mortem", "llm_rate_limit")),
 ):
     existing = await session.scalar(select(PostMortem).where(PostMortem.incident_id == incident_id))

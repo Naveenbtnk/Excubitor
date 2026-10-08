@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ApiError, type PublicError } from "@/lib/api";
+import { needsRole, useSession } from "@/lib/session";
 import { streamChat } from "@/lib/stream";
 
 interface Msg {
@@ -63,6 +64,10 @@ function DiagnosticId({ id }: { id: string }) {
 }
 
 export default function SandboxPage() {
+  const { can } = useSession();
+  // Generating a response spends provider quota, which is an Operator action. A Viewer can
+  // still read this page -- there is simply nothing for them to start.
+  const mayOperate = can("operator");
   const [history, setHistory] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -204,7 +209,13 @@ export default function SandboxPage() {
             <span className="ml-2 hidden sm:inline">Stop</span>
           </button>
         ) : (
-          <button onClick={send} className="btn-primary size-10 shrink-0 px-0 sm:w-auto sm:px-4" aria-label="Send message">
+          <button
+            onClick={send}
+            disabled={!mayOperate}
+            title={mayOperate ? undefined : needsRole("operator")}
+            className="btn-primary size-10 shrink-0 px-0 sm:w-auto sm:px-4"
+            aria-label="Send message"
+          >
             <Send size={16} />
             <span className="ml-2 hidden sm:inline">Send</span>
           </button>
@@ -214,6 +225,7 @@ export default function SandboxPage() {
       {streaming && (
         <p className="mt-2 text-xs text-neutral-500">Streaming from the provider. Stop keeps the partial answer.</p>
       )}
+      {!mayOperate && <p className="mt-2 text-xs text-neutral-500">{needsRole("operator")}</p>}
     </div>
   );
 }

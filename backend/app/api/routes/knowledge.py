@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_role
+from app.core.rbac import Role
 from app.db.session import get_session
 from app.models import RunbookChunk, User
 from app.schemas.common import Page, Pagination
@@ -13,6 +14,9 @@ from app.services.rag import add_runbook, search_runbooks
 from app.services.ratelimit import rate_limit
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
+
+# Asking a question about the runbooks is reading them, so it stays open to every role; adding
+# or uploading a runbook changes the shared corpus and is an Operator action.
 
 
 @router.get("/runbooks", response_model=Page[RunbookRead])
@@ -39,7 +43,7 @@ async def list_runbooks(
 async def create_runbook(
     payload: RunbookCreate,
     session: AsyncSession = Depends(get_session),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role(Role.OPERATOR)),
     _limit: None = Depends(rate_limit("knowledge.index", "embedding_rate_limit")),
 ):
     return await add_runbook(session, payload)
@@ -49,7 +53,7 @@ async def create_runbook(
 async def upload_runbook(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_role(Role.OPERATOR)),
     _limit: None = Depends(rate_limit("knowledge.index", "embedding_rate_limit")),
 ):
     content = (await file.read()).decode("utf-8")

@@ -112,6 +112,13 @@ container so the shared-ceiling guarantee is exercised on every push.
 - Gemini is only called from FastAPI; the API key is never sent to the browser.
 - The dashboard is protected by a signed, httpOnly session cookie.
 - There is no public registration route. The first admin comes from environment variables.
+- **Three roles, enforced per route.** `admin` can do everything including managing accounts,
+  `operator` can create alerts, run triage, generate post-mortems and use the Sandbox, and
+  `viewer` can only read. The check is a FastAPI dependency on each route, so a hidden button
+  is a courtesy rather than the control: a Viewer calling a write route directly gets `403`.
+  Roles live in `users.role` (constrained to those three values) and are read from the row on
+  every request, so a demotion takes effect on the next call rather than at the next login.
+  The seeded administrator is an `admin`.
 - Do not commit `backend/.env` or use the default credentials outside local development.
 - Set `COOKIE_SECURE=true` and restrict `CORS_ORIGINS` for HTTPS deployments.
 

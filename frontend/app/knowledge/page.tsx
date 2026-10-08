@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import { LoadMore } from "@/components/LoadMore";
 import { api } from "@/lib/api";
 import { usePaged } from "@/lib/paged";
+import { needsRole, useSession } from "@/lib/session";
 
 interface Runbook {
   id: number;
@@ -27,6 +28,10 @@ interface KnowledgeAnswer {
 }
 
 export default function KnowledgePage() {
+  const { can } = useSession();
+  // Adding to the shared corpus is an Operator action; asking questions about it is reading,
+  // so the query half of this page stays available to every role.
+  const mayOperate = can("operator");
   const {
     items: runbooks,
     total,
@@ -90,9 +95,10 @@ export default function KnowledgePage() {
 
         <div className="card p-4 sm:p-5">
           <h2 className="mb-3 font-semibold">Add runbook</h2>
-          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Runbook title, e.g. database pool exhaustion" className="input mb-2" />
-          <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="Paste runbook markdown or text here…" className="input min-h-[220px] resize-y" />
-          <button onClick={add} disabled={busy} className="btn-primary mt-3 gap-2">
+          {!mayOperate && <p className="mb-2 text-xs text-neutral-500">{needsRole("operator")}</p>}
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Runbook title, e.g. database pool exhaustion" className="input mb-2" disabled={!mayOperate} />
+          <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="Paste runbook markdown or text here…" className="input min-h-[220px] resize-y" disabled={!mayOperate} />
+          <button onClick={add} disabled={busy || !mayOperate} title={mayOperate ? undefined : needsRole("operator")} className="btn-primary mt-3 gap-2">
             <UploadCloud size={15} />
             {busy ? "Indexing…" : "Index runbook"}
           </button>

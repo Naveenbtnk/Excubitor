@@ -7,6 +7,7 @@ import { useState } from "react";
 import { LoadMore } from "@/components/LoadMore";
 import { api } from "@/lib/api";
 import { usePaged } from "@/lib/paged";
+import { needsRole, useSession } from "@/lib/session";
 
 interface Incident {
   id: number;
@@ -22,6 +23,8 @@ interface PostMortem {
 }
 
 export default function PostMortemsPage() {
+  const { can } = useSession();
+  const mayOperate = can("operator");
   const {
     items: incidents,
     total,
@@ -60,7 +63,13 @@ export default function PostMortemsPage() {
         <div className="card divide-y divide-black/5 overflow-hidden">
           {incidents.length === 0 && <div className="p-8 text-center text-sm text-neutral-500">No incidents yet. Triage an alert first.</div>}
           {incidents.map((incident) => (
-            <button key={incident.id} onClick={() => generate(incident.id)} className="w-full p-4 text-left transition hover:bg-white/60">
+            <button
+              key={incident.id}
+              onClick={() => generate(incident.id)}
+              disabled={!mayOperate}
+              title={mayOperate ? undefined : needsRole("operator")}
+              className="w-full p-4 text-left transition hover:bg-white/60 disabled:cursor-not-allowed"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium">{incident.title}</div>

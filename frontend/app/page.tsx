@@ -7,6 +7,7 @@ import { MetricTile } from "@/components/MetricTile";
 import { SystemHealthCard } from "@/components/SystemHealthCard";
 import { api, fetcher } from "@/lib/api";
 import { usePaged } from "@/lib/paged";
+import { needsRole, useSession } from "@/lib/session";
 
 interface Overview {
   status: string;
@@ -30,6 +31,8 @@ interface Scenarios {
 }
 
 export default function OverviewPage() {
+  const { can } = useSession();
+  const mayOperate = can("operator");
   const { data, error, mutate } = useSWR<Overview>("/overview", fetcher);
   const { items: alerts, mutate: mutateAlerts } = usePaged<Alert>("/alerts", 5);
   const { data: scenarios } = useSWR<Scenarios>("/alerts/scenarios", fetcher);
@@ -72,6 +75,8 @@ export default function OverviewPage() {
               defaultValue=""
               onChange={(event) => simulate(event.target.value)}
               aria-label="Simulate incident"
+              disabled={!mayOperate}
+              title={mayOperate ? undefined : needsRole("operator")}
             >
               <option value="">Simulate incident…</option>
               {(scenarios?.scenarios ?? []).map((scenario) => (

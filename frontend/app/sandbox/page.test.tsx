@@ -34,6 +34,19 @@ interface StreamControl {
   end: () => void;
 }
 
+/**
+ * The page asks `/auth/me` for the caller's role, and an Operator is the role that can start a
+ * generation. Every stub below answers that one request first -- a stream response to it would
+ * leave the page role-less and its Send button disabled, which is a test's own bug, not the
+ * app's behaviour.
+ */
+function sessionResponse(role = "operator"): Response {
+  return new Response(
+    JSON.stringify({ id: 2, email: "ops@cloudops.local", name: "Ops Person", role }),
+    { status: 200, headers: { "content-type": "application/json" } }
+  );
+}
+
 /** A 200 SSE response whose body this test controls chunk by chunk. */
 function stubStream(): StreamControl {
   let controller!: ReadableStreamDefaultController<Uint8Array>;
@@ -45,7 +58,9 @@ function stubStream(): StreamControl {
 
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/auth/me")) return sessionResponse();
+
       // Real `fetch` fails the body read when the caller aborts; mirror that, so the Stop
       // button exercises the page's own abort path rather than a shortcut.
       const signal = init?.signal;
@@ -68,13 +83,13 @@ function stubStream(): StreamControl {
 function stubJsonFailure(status: number, body: unknown) {
   vi.stubGlobal(
     "fetch",
-    vi.fn(
-      async () =>
-        new Response(JSON.stringify(body), {
-          status,
-          headers: { "content-type": "application/json" },
-        })
-    )
+    vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/auth/me")) return sessionResponse();
+      return new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    })
   );
 }
 
@@ -92,7 +107,10 @@ async function finish(stream: StreamControl) {
   });
 }
 
-function submit(text = "Postgres pool exhaustion on orders-api") {
+async function submit(text = "Postgres pool exhaustion on orders-api") {
+  // The page asks `/auth/me` for the caller's role and leaves Send disabled until it knows;
+  // waiting here keeps the click from racing that request.
+  await waitFor(() => expect(screen.getByLabelText("Send message")).toBeEnabled());
   fireEvent.change(screen.getByPlaceholderText("Describe the incident…"), {
     target: { value: text },
   });
@@ -100,7 +118,7 @@ function submit(text = "Postgres pool exhaustion on orders-api") {
 }
 
 async function submitQuotaFrame(frame: Record<string, unknown>, stream: StreamControl) {
-  submit();
+  await submit();
   await push(stream, `event: error\ndata: ${JSON.stringify(frame)}\n\n`);
   await finish(stream);
 }
@@ -113,7 +131,7 @@ describe("streaming", () => {
   it("renders tokens progressively and drops Thinking once they arrive", async () => {
     const stream = stubStream();
     render(<SandboxPage />);
-    submit();
+    await submit();
 
     expect(await screen.findByText("Thinking…")).toBeInTheDocument();
 
@@ -131,7 +149,7 @@ describe("streaming", () => {
   it("keeps the partial answer when stopped before the first token", async () => {
     stubStream();
     render(<SandboxPage />);
-    submit();
+    await submit();
     expect(await screen.findByText("Thinking…")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Stop generating"));
@@ -146,7 +164,7 @@ describe("streaming", () => {
   it("keeps the partial answer when stopped after output has arrived", async () => {
     const stream = stubStream();
     render(<SandboxPage />);
-    submit();
+    await submit();
 
     await push(stream, "event: message\ndata: Half an answer.\n\n");
     expect(await screen.findByText("Half an answer.")).toBeInTheDocument();
@@ -233,7 +251,7 @@ describe("failures", () => {
   it("replaces a raw provider payload with our own sentence", async () => {
     const stream = stubStream();
     render(<SandboxPage />);
-    submit();
+    await submit();
 
     const raw = `429 RESOURCE_EXHAUSTED. ${JSON.stringify({
       error: {
@@ -273,7 +291,7 @@ describe("failures", () => {
   it("shows the API's sentence for a failure that arrives as a status", async () => {
     stubJsonFailure(429, { detail: "Too many requests. Try again in 12 seconds." });
     render(<SandboxPage />);
-    submit();
+    await submit();
 
     // The note prefixes the sentence with a warning glyph, so match on the sentence itself.
     expect(await screen.findByText(/Too many requests. Try again in 12 seconds/)).toBeInTheDocument();

@@ -61,12 +61,17 @@ from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.core.counter_store import get_counter_store  # noqa: E402
+from app.core.security import hash_password  # noqa: E402
 from app.db.session import SessionLocal, seed_admin  # noqa: E402
 from app.main import app  # noqa: E402
+from app.models import User  # noqa: E402
 from app.services import llm as llm_module  # noqa: E402
 from app.services.llm.base import LLMProvider, Message, StructuredModel  # noqa: E402
 
 TABLES = ("post_mortems", "runbook_chunks", "incidents", "alerts", "users")
+
+# Password for accounts the RBAC tests create; anything hashed the same way is fine.
+TEST_USER_PASSWORD = "Role-Test-Passw0rd!"
 
 
 class FakeLLM(LLMProvider):
@@ -181,3 +186,36 @@ async def authed_client(client: AsyncClient) -> AsyncClient:
     )
     assert response.status_code == 200, response.text
     return client
+
+
+@pytest.fixture
+def make_user():
+    """Create an account with a role, for tests that need someone other than the admin."""
+
+    async def _make(email: str, role: str, name: str = "Test User") -> None:
+        async with SessionLocal() as session:
+            session.add(
+                User(
+                    email=email,
+                    password_hash=hash_password(TEST_USER_PASSWORD),
+                    name=name,
+                    role=role,
+                )
+            )
+            await session.commit()
+
+    return _make
+
+
+@pytest.fixture
+def login_as(client: AsyncClient):
+    """Sign the shared client in as an account created by ``make_user`` (or the admin)."""
+
+    async def _login(email: str, password: str = TEST_USER_PASSWORD) -> AsyncClient:
+        response = await client.post(
+            "/auth/login", json={"email": email, "password": password}
+        )
+        assert response.status_code == 200, response.text
+        return client
+
+    return _login

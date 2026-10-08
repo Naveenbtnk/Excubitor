@@ -6,6 +6,7 @@ import { useState } from "react";
 import { LoadMore } from "@/components/LoadMore";
 import { api, fetcher } from "@/lib/api";
 import { usePaged } from "@/lib/paged";
+import { needsRole, useSession } from "@/lib/session";
 
 interface Alert {
   id: number;
@@ -39,6 +40,8 @@ const severityClass: Record<string, string> = {
 };
 
 export default function AlertsPage() {
+  const { can } = useSession();
+  const mayOperate = can("operator");
   const {
     items: alerts,
     total,
@@ -87,7 +90,14 @@ export default function AlertsPage() {
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Alerts</h1>
           <p className="mt-1 text-sm text-neutral-500">Inbound telemetry alerts awaiting AI triage.</p>
         </div>
-        <select className="input sm:max-w-[260px]" defaultValue="" onChange={(event) => simulate(event.target.value)}>
+        <select
+          className="input sm:max-w-[260px]"
+          defaultValue=""
+          onChange={(event) => simulate(event.target.value)}
+          aria-label="Simulate alert"
+          disabled={!mayOperate}
+          title={mayOperate ? undefined : needsRole("operator")}
+        >
           <option value="">Simulate alert…</option>
           {(scenarios?.scenarios ?? []).map((scenario) => (
             <option key={scenario} value={scenario}>{scenario}</option>
@@ -112,11 +122,21 @@ export default function AlertsPage() {
               <div className="mt-1 text-sm text-neutral-600">{alert.detail}</div>
             </div>
             <div className="flex flex-wrap gap-2 lg:justify-end">
-              <button onClick={() => triage(alert.id)} disabled={triaging === alert.id} className="btn-primary gap-2 bg-brand-rose hover:bg-[#9c3141]">
+              <button
+                onClick={() => triage(alert.id)}
+                disabled={triaging === alert.id || !mayOperate}
+                title={mayOperate ? undefined : needsRole("operator")}
+                className="btn-primary gap-2 bg-brand-rose hover:bg-[#9c3141]"
+              >
                 <Sparkles size={14} />
                 {triaging === alert.id ? "Analyzing…" : "AI Triage"}
               </button>
-              <button onClick={() => acknowledge(alert.id)} className="btn-secondary gap-2">
+              <button
+                onClick={() => acknowledge(alert.id)}
+                disabled={!mayOperate}
+                title={mayOperate ? undefined : needsRole("operator")}
+                className="btn-secondary gap-2"
+              >
                 <CheckCircle2 size={14} />
                 Ack
               </button>
