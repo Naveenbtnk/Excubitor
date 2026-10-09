@@ -1,6 +1,8 @@
-# CloudOps AI
+# Excubitor
 
-CloudOps AI is an AIOps dashboard for alert simulation, Gemini-powered incident triage, pgvector-backed runbook retrieval, and AI-generated post-mortems.
+Production-grade CloudOps AI — AIOps console with AI triage, incident timelines, and RAG-powered post-mortems.
+
+Excubitor is an AIOps dashboard for alert simulation, Gemini-powered incident triage, pgvector-backed runbook retrieval, and AI-generated post-mortems.
 
 ## Features
 
@@ -428,6 +430,10 @@ reachability and reports the remaining provider budget (both are public, for orc
 
 ## Known limitations
 
+- **The apple-touch-icon is an SVG, and iOS wants a PNG.** The mark is hand-written SVG on
+  purpose — no binary assets in the tree — so `public/apple-touch-icon.svg` is what the link
+  points at. Browsers that accept an SVG touch icon use it; iOS falls back to a screenshot of
+  the page. Generating the PNG sizes is a build step that has not been added.
 - **Webhook ingestion does not dedupe yet.** Alertmanager re-sends a group on every
   `repeat_interval` and again when it resolves, and each delivery creates new alert rows, so a
   long-firing alert appears once per notification. `POST /webhooks/alertmanager` accepts the

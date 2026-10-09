@@ -1,8 +1,9 @@
 "use client";
 
-import { Activity, ArrowRight, LockKeyhole } from "lucide-react";
+import { ArrowRight, LockKeyhole } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
+import { Logo } from "@/components/Logo";
 import { api } from "@/lib/api";
 
 function LoginForm() {
@@ -66,12 +67,12 @@ export default function LoginPage() {
     <main className="grid min-h-screen place-items-center px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-6 flex items-center justify-center gap-3">
-          <div className="grid size-11 place-items-center rounded-2xl bg-neutral-900 text-white">
-            <Activity size={22} />
+          <div className="grid size-11 place-items-center rounded-2xl bg-neutral-900 text-brand-cream">
+            <Logo size={24} title="Excubitor" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold">CloudOps AI</h1>
-            <p className="text-xs uppercase tracking-widest text-neutral-500">Secure ops console</p>
+            <h1 className="text-xl font-semibold">Excubitor</h1>
+            <p className="text-xs tracking-widest text-neutral-500">CloudOps AI</p>
           </div>
         </div>
         <Suspense fallback={<div className="card p-6 text-sm text-neutral-500">Loading sign in…</div>}>

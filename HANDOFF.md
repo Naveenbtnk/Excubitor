@@ -1,4 +1,4 @@
-# CloudOps AI — Handoff Brief for Continued Development (DeepSeek)
+# Excubitor — Handoff Brief for Continued Development (DeepSeek)
 
 > Read this entire file before writing any code. It tells you what this project is,
 > exactly what has already been built and verified, what is intentionally left for you,
@@ -6,7 +6,7 @@
 
 ## 1. What this project is
 
-**CloudOps AI** is an AIOps (Cloud Operations) dashboard, modeled on tools like PagerDuty /
+**Excubitor** (CloudOps AI) is an AIOps (Cloud Operations) dashboard, modeled on tools like PagerDuty /
 Datadog incident-response consoles. It simulates cloud infrastructure alerts, uses an LLM to
 triage them (root cause + remediation), retrieves relevant runbooks via vector search (RAG),
 and generates AI-written post-mortems. It is a two-service app:

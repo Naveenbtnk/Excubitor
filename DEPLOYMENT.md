@@ -1,4 +1,4 @@
-# Deploying CloudOps AI
+# Deploying Excubitor
 
 This is the operational companion to the [README](README.md): what to set, what to put in front
 of the stack, how to back it up, and how to tell that a deployment is actually working.

@@ -2,7 +2,6 @@
 
 import { clsx } from "clsx";
 import {
-  Activity,
   BookOpen,
   FileText,
   LayoutDashboard,
@@ -17,6 +16,7 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { Logo } from "@/components/Logo";
 import { api } from "@/lib/api";
 import { useSession, type Role } from "@/lib/session";
 
@@ -60,13 +60,15 @@ export function Nav() {
     <header className="sticky top-0 z-40 -mx-3 mb-4 border-b border-black/5 bg-brand-cream/90 px-3 py-3 backdrop-blur sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
       <div className="flex items-center justify-between gap-3">
         <Link href="/" className="flex min-w-0 items-center gap-2">
-          <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-neutral-900 text-white">
-            <Activity size={18} />
+          {/* The mark is cream on the same dark tile as the rest of the chrome, so the flame
+              is a hole showing the tile through it rather than a second colour. */}
+          <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-neutral-900 text-brand-cream">
+            <Logo size={20} />
           </div>
           <div className="min-w-0 leading-tight">
-            <div className="truncate text-sm font-semibold sm:text-base">CloudOps AI</div>
-            <div className="hidden text-[10px] uppercase tracking-widest text-neutral-500 sm:block">
-              Incident command center
+            <div className="truncate text-sm font-semibold sm:text-base">Excubitor</div>
+            <div className="hidden text-[10px] tracking-widest text-neutral-500 sm:block">
+              CloudOps AI
             </div>
           </div>
         </Link>

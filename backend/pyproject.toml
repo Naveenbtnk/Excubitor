@@ -1,7 +1,7 @@
 [project]
 name = "cloudops-ai-backend"
 version = "1.0.0"
-description = "CloudOps AI backend: FastAPI, PostgreSQL + pgvector, Gemini"
+description = "Excubitor — CloudOps AI backend: FastAPI, PostgreSQL + pgvector, Gemini"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.141,<1",

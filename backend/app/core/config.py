@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    app_name: str = "CloudOps AI"
+    app_name: str = "Excubitor — CloudOps AI"
     environment: str = "development"
     # Off unless a development run asks for it. In production it would return tracebacks to
     # callers, so the startup guard refuses to start with it on.

@@ -62,7 +62,7 @@ export default function OverviewPage() {
 
           <div>
             <h1 className="max-w-2xl text-3xl font-semibold leading-tight tracking-tight sm:text-4xl lg:text-5xl">
-              Smarter ops with <span className="text-brand-rose">CloudOps AI.</span>
+              Smarter ops with <span className="text-brand-rose">Excubitor.</span>
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-neutral-600 sm:text-base">
               A production-style AIOps dashboard for telemetry, vector runbooks, Gemini triage, and incident post-mortems.

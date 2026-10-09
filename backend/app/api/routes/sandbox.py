@@ -16,7 +16,7 @@ from app.services.ratelimit import rate_limit
 router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 
 SYSTEM_PROMPT = (
-    "You are CloudOps AI, an SRE copilot. Give practical, safe, step-by-step operations guidance."
+    "You are Excubitor, an SRE copilot. Give practical, safe, step-by-step operations guidance."
 )
 
 

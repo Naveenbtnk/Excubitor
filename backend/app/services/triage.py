@@ -13,7 +13,7 @@ def _format_hits(hits: list[KnowledgeHit]) -> str:
 
 async def triage_alert(alert: Alert, hits: list[KnowledgeHit]) -> Incident:
     system = (
-        "You are CloudOps AI, a senior SRE copilot. Return concise structured JSON with "
+        "You are Excubitor, a senior SRE copilot. Return concise structured JSON with "
         "a practical summary, likely root cause, ordered remediation steps, and confidence."
     )
     user = (
@@ -40,7 +40,7 @@ async def triage_alert(alert: Alert, hits: list[KnowledgeHit]) -> Incident:
 
 async def write_post_mortem(incident: Incident) -> str:
     system = (
-        "You are CloudOps AI. Write a concise post-mortem in markdown with sections: "
+        "You are Excubitor. Write a concise post-mortem in markdown with sections: "
         "Summary, Timeline, Root cause, Impact, Remediation, Follow-ups."
     )
     user = (
