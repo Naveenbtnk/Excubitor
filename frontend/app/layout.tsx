@@ -9,11 +9,15 @@ export const metadata: Metadata = {
     default: "Excubitor — CloudOps AI",
     template: "Excubitor — %s",
   },
-  // The favicon is app/icon.svg, which Next turns into a hashed <link rel="icon"> on its own.
-  // The apple icon has no such convention for SVG (a file named apple-icon.svg is simply not
-  // routed), so the same drawing is served from public/ and named here. Note that iOS itself
-  // still wants a PNG for this one -- see the known limitations in the README.
-  icons: { apple: "/apple-touch-icon.svg" },
+  // Both icons are named here rather than left to the filename conventions. `app/icon.svg` is
+  // routed either way, but a metadata `icons` field replaces the file-convention link instead of
+  // adding to it, so setting only the apple icon silently dropped the favicon. The apple icon has
+  // no SVG convention at all, so the same drawing is served from public/. Note that iOS still
+  // wants a PNG for that one -- see the known limitations in the README.
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    apple: "/apple-touch-icon.svg",
+  },
   description:
     "Excubitor is a CloudOps AI console for alert triage, incident timelines, and RAG-powered post-mortems.",
 };
