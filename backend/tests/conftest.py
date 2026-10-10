@@ -65,11 +65,13 @@ from app.core.security import hash_password  # noqa: E402
 from app.db.session import SessionLocal, seed_admin  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import User  # noqa: E402
+from app.schemas.postmortems import PostMortemDraft  # noqa: E402
 from app.services import llm as llm_module  # noqa: E402
 from app.services.llm.base import LLMProvider, Message, StructuredModel  # noqa: E402
 
 TABLES = (
     "incident_events",
+    "post_mortem_actions",
     "post_mortems",
     "runbook_chunks",
     "incidents",
@@ -98,8 +100,17 @@ class FakeLLM(LLMProvider):
         response_model: type[StructuredModel] | None = None,
     ) -> str | StructuredModel:
         self.chat_calls.append(messages)
+        if response_model is PostMortemDraft:
+            return response_model(
+                narrative="Fake answer from the LLM.",
+                timeline_summary="Pool exhaustion opened at 09:12 and was triaged at 09:13.",
+                root_cause="Connection leak",
+                contributing_factors=["Pool size unchanged since March"],
+                impact="orders-api returned 500s for four minutes.",
+                action_items=["Drain idle sessions", "Restart orders-api"],
+            )
         if response_model is not None:
-            # Only TriageResult uses structured output today.
+            # TriageResult and PostMortemDraft are the two structured calls the app makes.
             return response_model(
                 summary="Pool exhausted on orders-api",
                 root_cause="Connection leak",

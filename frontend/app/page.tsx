@@ -1,7 +1,17 @@
 "use client";
 
-import { ArrowUpRight, Cpu, Database, HeartPulse, Siren, Sparkles } from "lucide-react";
+import {
+  ArrowUpRight,
+  CalendarClock,
+  CheckCircle2,
+  Cpu,
+  Database,
+  HeartPulse,
+  Siren,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import useSWR from "swr";
 import { MetricTile } from "@/components/MetricTile";
 import { SystemHealthCard } from "@/components/SystemHealthCard";
@@ -9,12 +19,31 @@ import { api, fetcher } from "@/lib/api";
 import { usePaged } from "@/lib/paged";
 import { needsRole, useSession } from "@/lib/session";
 
+interface ActionItem {
+  id: number;
+  text: string;
+  owner: string | null;
+  due_date: string | null;
+  overdue: boolean;
+  post_mortem_id: number;
+  incident_id: number;
+  incident_title: string;
+}
+
+interface ActionItems {
+  open: number;
+  overdue: number;
+  items: ActionItem[];
+}
+
 interface Overview {
   status: string;
   active_alerts: number;
   log_entries: number;
   model: { provider: string; name: string };
   runbooks: { doc_id: string; title: string; source: string }[];
+  // Optional so a payload from an older API renders the rest of the page rather than nothing.
+  action_items?: ActionItems;
 }
 
 interface Alert {
@@ -36,6 +65,26 @@ export default function OverviewPage() {
   const { data, error, mutate } = useSWR<Overview>("/overview", fetcher);
   const { items: alerts, mutate: mutateAlerts } = usePaged<Alert>("/alerts", 5);
   const { data: scenarios } = useSWR<Scenarios>("/alerts/scenarios", fetcher);
+  const [closing, setClosing] = useState<number | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  async function closeItem(item: ActionItem) {
+    // The API refuses a Viewer regardless; this is the UI half of the same rule.
+    if (!mayOperate) return;
+    setClosing(item.id);
+    setActionError(null);
+    try {
+      await api(`/post-mortems/${item.post_mortem_id}/actions/${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "done" }),
+      });
+      await mutate();
+    } catch (err) {
+      setActionError((err as Error).message);
+    } finally {
+      setClosing(null);
+    }
+  }
 
   async function simulate(scenario: string) {
     // The control is disabled for anyone below Operator; returning here means a forced event
@@ -105,6 +154,87 @@ export default function OverviewPage() {
         <MetricTile label="Active Alerts" value={`${activeAlerts} Pending`} icon={Siren} tone={activeAlerts > 0 ? "warn" : "good"} />
         <MetricTile label="Log Entries" value={`${data?.log_entries ?? 0} Logged`} icon={Database} />
         <MetricTile label="AI Model" value={data?.model.name ?? "Loading"} icon={Cpu} />
+      </section>
+
+      {/* The follow-ups a team actually owes somebody. This is the one strip on the page that
+          gets shorter when the work gets done, which is what makes the rest of it operational
+          rather than decorative. */}
+      <section className="card mt-5 p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="flex items-center gap-2 font-semibold">
+              <CalendarClock size={16} className="text-brand-rose" aria-hidden />
+              Open action items
+            </h3>
+            <p className="mt-1 text-xs text-neutral-500">
+              Follow-ups from post-mortems, oldest deadline first.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-full bg-neutral-100 px-2.5 py-1 font-medium text-neutral-700">
+              {data?.action_items?.open ?? 0} open
+            </span>
+            {(data?.action_items?.overdue ?? 0) > 0 && (
+              <span className="rounded-full bg-rose-50 px-2.5 py-1 font-medium text-rose-700">
+                {data?.action_items?.overdue} overdue
+              </span>
+            )}
+            <Link href="/post-mortems" className="text-brand-rose underline-offset-2 hover:underline">
+              Post-mortems
+            </Link>
+          </div>
+        </div>
+
+        {actionError && (
+          <div role="alert" className="mt-3 text-sm text-rose-700">
+            {actionError}
+          </div>
+        )}
+
+        <div className="mt-3 divide-y divide-black/5">
+          {(data?.action_items?.items ?? []).length === 0 && (
+            <div className="py-6 text-center text-sm text-neutral-500">
+              Nothing outstanding. Follow-ups appear here once a post-mortem has them.
+            </div>
+          )}
+          {data?.action_items?.items.map((item) => (
+            <div
+              key={item.id}
+              className="grid gap-2 py-3 sm:grid-cols-[1fr_auto] sm:items-center sm:gap-3"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  {item.overdue && (
+                    <span
+                      className="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-rose-700"
+                    >
+                      Overdue
+                    </span>
+                  )}
+                  <span className="truncate text-sm">{item.text}</span>
+                </div>
+                <div className="mt-0.5 text-xs text-neutral-500">
+                  {item.owner ?? "unassigned"} · due {item.due_date ?? "no date"} ·{" "}
+                  <Link
+                    href={`/incidents/${item.incident_id}`}
+                    className="text-brand-rose underline-offset-2 hover:underline"
+                  >
+                    {item.incident_title || `incident ${item.incident_id}`}
+                  </Link>
+                </div>
+              </div>
+              <button
+                className="btn-secondary gap-2 justify-self-start sm:justify-self-end"
+                disabled={!mayOperate || closing === item.id}
+                title={mayOperate ? undefined : needsRole("operator")}
+                onClick={() => closeItem(item)}
+              >
+                <CheckCircle2 size={14} aria-hidden />
+                {closing === item.id ? "Closing…" : "Mark done"}
+              </button>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3 lg:gap-6">

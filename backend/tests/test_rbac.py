@@ -54,6 +54,9 @@ READS: list[str] = [
     "/incidents",
     "/knowledge/runbooks",
     "/overview",
+    # A Viewer's post-mortem list is not empty in general: it is the published documents. The
+    # draft case is the permission test in test_post_mortem_workflow.py.
+    "/post-mortems",
     "/auth/me",
 ]
 

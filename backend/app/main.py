@@ -11,6 +11,7 @@ from app.api.routes import (
     incidents,
     knowledge,
     overview,
+    post_mortems,
     sandbox,
     users,
     webhooks,
@@ -102,6 +103,9 @@ def create_app() -> FastAPI:
     app.include_router(knowledge.router)
     app.include_router(sandbox.router)
     app.include_router(incidents.router)
+    # The documents an incident produces. Generating one is an incident action and stays in the
+    # incidents router; reading, reviewing and exporting it are its own collection.
+    app.include_router(post_mortems.router)
     app.include_router(users.router)
     # Registered like any other router, but authenticated by shared token rather than a
     # session cookie: the caller is Alertmanager, which has no user to check a role against.

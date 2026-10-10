@@ -1,6 +1,7 @@
 from app.models import Alert, Incident
 from app.schemas.incidents import TriageResult
 from app.schemas.knowledge import KnowledgeHit
+from app.schemas.postmortems import PostMortemDraft
 from app.services.llm import get_llm
 from app.services.llm.base import Message
 
@@ -38,15 +39,28 @@ async def triage_alert(alert: Alert, hits: list[KnowledgeHit]) -> Incident:
     )
 
 
-async def write_post_mortem(incident: Incident) -> str:
+async def write_post_mortem(incident: Incident) -> PostMortemDraft:
+    """Draft the whole document in one structured call.
+
+    The narrative is part of the same reply rather than a second request: the sections and the
+    write-up come from one reading of the incident, so asking twice would spend another call to
+    get a story that might disagree with the fields beside it.
+    """
     system = (
-        "You are Excubitor. Write a concise post-mortem in markdown with sections: "
-        "Summary, Timeline, Root cause, Impact, Remediation, Follow-ups."
+        "You are Excubitor, writing an incident post-mortem for an SRE team. Return concise "
+        "structured JSON: a short markdown narrative, a timeline summary of what happened and "
+        "in what order, the root cause, the contributing factors as a list of one-sentence "
+        "items, the impact on users and systems, and concrete follow-up action items. Stay "
+        "strictly with what the incident record supports; do not invent numbers, owners or "
+        "dates. If something is not known from the record, say so rather than guessing."
     )
     user = (
         f"Incident: {incident.title}\nSummary: {incident.summary}\n"
-        f"Root cause: {incident.root_cause}\nRecommendation: {incident.recommendation}"
+        f"Root cause: {incident.root_cause}\nRecommendation: {incident.recommendation}\n"
+        f"Status: {incident.status}\nAssignee: {incident.assignee or 'unassigned'}"
     )
-    reply = await get_llm().chat([Message(role="user", content=user)], system=system)
-    assert isinstance(reply, str)
+    reply = await get_llm().chat(
+        [Message(role="user", content=user)], system=system, response_model=PostMortemDraft
+    )
+    assert isinstance(reply, PostMortemDraft)
     return reply

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import OverviewPage from "./page";
 import { jsonResponse, pageOf, renderPage, stubApi, VIEWER_REASON, writes } from "@/test/support";
@@ -21,6 +21,32 @@ const OVERVIEW = {
   log_entries: 5,
   model: { provider: "gemini", name: "gemini-3.8-flash" },
   runbooks: [{ doc_id: "rb-1", title: "postgres-pool", source: "manual" }],
+  action_items: {
+    open: 2,
+    overdue: 1,
+    items: [
+      {
+        id: 11,
+        text: "Right-size the pool",
+        owner: "ops@cloudops.local",
+        due_date: "2026-10-06",
+        overdue: true,
+        post_mortem_id: 5,
+        incident_id: 1,
+        incident_title: "Database pool exhaustion",
+      },
+      {
+        id: 12,
+        text: "Add a pool-waiter alert",
+        owner: null,
+        due_date: null,
+        overdue: false,
+        post_mortem_id: 5,
+        incident_id: 1,
+        incident_title: "Database pool exhaustion",
+      },
+    ],
+  },
 };
 
 const ALERTS = [
@@ -48,6 +74,10 @@ function routes(url: string, method: string) {
     return jsonResponse({ scenarios: ["S3 403 burst", "Postgres pool exhaustion"] });
   }
   if (url.includes("/alerts/simulate") && method === "POST") return jsonResponse({}, 201);
+  // The strip's "Mark done" closes one follow-up through the document it belongs to.
+  if (url.includes("/post-mortems/") && url.includes("/actions/") && method === "PATCH") {
+    return jsonResponse({ status: "done" });
+  }
   if (url.includes("/alerts")) return jsonResponse(pageOf(ALERTS, 2, 5));
   return undefined;
 }
@@ -66,7 +96,12 @@ it("renders the health tiles, the alert queue and the runbook index", async () =
   expect(screen.getByText("gemini-3.8-flash")).toBeInTheDocument();
   expect(screen.getByText("gemini (gemini-3.8-flash)")).toBeInTheDocument();
 
-  expect(screen.getByText("Database pool exhaustion")).toBeInTheDocument();
+  // Scoped to the queue card: the follow-up strip names the same incident, which is the point
+  // of the strip but would make an unscoped query ambiguous.
+  const queue = screen
+    .getByRole("heading", { name: /Active Incidents & AI Recommendations/i })
+    .closest(".card") as HTMLElement;
+  expect(within(queue).getByText("Database pool exhaustion")).toBeInTheDocument();
   expect(screen.getByText("kubernetes · critical · open")).toBeInTheDocument();
   expect(screen.getByText("postgres-pool")).toBeInTheDocument();
   expect(screen.getByText("Ready")).toBeInTheDocument();
@@ -114,6 +149,50 @@ it("offers a viewer no way to simulate anything", async () => {
   expect(select).toHaveAttribute("title", VIEWER_REASON);
 
   fireEvent.change(select, { target: { value: "S3 403 burst" } });
+
+  expect(writes(calls)).toHaveLength(0);
+});
+
+it("shows the outstanding follow-ups with the overdue one first", async () => {
+  stubApi("operator", routes);
+  renderPage(<OverviewPage />);
+
+  expect(await screen.findByText("Right-size the pool")).toBeInTheDocument();
+  expect(screen.getByText("Add a pool-waiter alert")).toBeInTheDocument();
+  expect(screen.getByText("2 open")).toBeInTheDocument();
+  expect(screen.getByText("1 overdue")).toBeInTheDocument();
+  expect(screen.getByText("Overdue")).toBeInTheDocument();
+  expect(screen.getByText(/unassigned · due no date/)).toBeInTheDocument();
+
+  const links = screen.getAllByRole("link", { name: "Database pool exhaustion" });
+  expect(links[0]).toHaveAttribute("href", "/incidents/1");
+});
+
+it("closes a follow-up from the strip without touching the rest of the page", async () => {
+  const calls = stubApi("operator", routes);
+  renderPage(<OverviewPage />);
+
+  const close = (await screen.findAllByRole("button", { name: /mark done/i }))[0];
+  fireEvent.click(close);
+
+  await waitFor(() => {
+    const patched = calls.find((call) => call.url.includes("/post-mortems/5/actions/11"));
+    expect(patched?.method).toBe("PATCH");
+    expect(patched?.body).toBe(JSON.stringify({ status: "done" }));
+  });
+  // The strip is reloaded, so the count cannot lag behind the click.
+  await waitFor(() => expect(calls.filter((call) => call.url.includes("/overview"))).toHaveLength(2));
+});
+
+it("offers a viewer no way to close somebody else's follow-up", async () => {
+  const calls = stubApi("viewer", routes);
+  renderPage(<OverviewPage />);
+
+  const close = (await screen.findAllByRole("button", { name: /mark done/i }))[0];
+  expect(close).toBeDisabled();
+  expect(close).toHaveAttribute("title", VIEWER_REASON);
+
+  fireEvent.click(close);
 
   expect(writes(calls)).toHaveLength(0);
 });

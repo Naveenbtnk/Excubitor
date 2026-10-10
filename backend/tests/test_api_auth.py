@@ -28,6 +28,11 @@ PROTECTED_ROUTES = [
     ("POST", "/incidents/triage/1", {}),
     ("GET", "/incidents/1/post-mortem", {}),
     ("POST", "/incidents/1/post-mortem", {}),
+    ("GET", "/post-mortems", {}),
+    ("GET", "/post-mortems/1", {}),
+    ("PATCH", "/post-mortems/1", {"json": {"status": "published"}}),
+    ("PATCH", "/post-mortems/1/actions/1", {"json": {"status": "done"}}),
+    ("GET", "/post-mortems/1/export.md", {}),
     ("GET", "/auth/me", {}),
 ]
 

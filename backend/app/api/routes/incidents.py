@@ -4,17 +4,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_role
 from app.core.incidents import IncidentEventKind, IncidentStatus
+from app.core.postmortems import PostMortemStatus
 from app.core.rbac import Role
 from app.db.session import get_session
-from app.models import Alert, Incident, IncidentEvent, PostMortem, User
+from app.models import Alert, Incident, IncidentEvent, PostMortem, PostMortemAction, User
 from app.schemas.common import Page, Pagination
 from app.schemas.incidents import (
     IncidentCommentCreate,
     IncidentEventRead,
     IncidentRead,
     IncidentUpdate,
-    PostMortemRead,
 )
+from app.schemas.postmortems import PostMortemRead
+from app.services.postmortems import document_query, visible_to
 from app.services.rag import search_runbooks
 from app.services.ratelimit import rate_limit
 from app.services.timeline import incident_event
@@ -207,10 +209,15 @@ async def triage(
 async def get_post_mortem(
     incident_id: int,
     session: AsyncSession = Depends(get_session),
-    _: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
+    """The incident's document, if this caller may read it.
+
+    A Viewer asking for an incident whose post-mortem is still a draft gets the same 404 as one
+    that has no post-mortem at all: the difference is not theirs to see.
+    """
     post_mortem = await session.scalar(
-        select(PostMortem).where(PostMortem.incident_id == incident_id)
+        document_query().where(PostMortem.incident_id == incident_id, visible_to(user))
     )
     if not post_mortem:
         raise HTTPException(404, "Post-mortem not generated")
@@ -224,14 +231,33 @@ async def generate_post_mortem(
     user: User = Depends(require_role(Role.OPERATOR)),
     _limit: None = Depends(rate_limit("incidents.post_mortem", "llm_rate_limit")),
 ):
-    existing = await session.scalar(select(PostMortem).where(PostMortem.incident_id == incident_id))
+    existing = await session.scalar(
+        document_query().where(PostMortem.incident_id == incident_id, visible_to(user))
+    )
     if existing:
         # Returning the existing one keeps this idempotent, and deliberately writes no event:
         # nothing happened, so there is nothing to add to the timeline.
         return existing
     incident = await _incident_or_404(session, incident_id)
-    content = await write_post_mortem(incident)
-    post_mortem = PostMortem(incident_id=incident.id, content=content)
+    draft = await write_post_mortem(incident)
+    post_mortem = PostMortem(
+        incident_id=incident.id,
+        content=draft.narrative,
+        timeline_summary=draft.timeline_summary,
+        root_cause=draft.root_cause,
+        contributing_factors=draft.contributing_factors,
+        impact=draft.impact,
+        # Generated documents start in review, never published: a machine's account of an
+        # incident is a proposal until a person signs it off.
+        status=PostMortemStatus.DRAFT.value,
+        author=user.email,
+        author_id=user.id,
+        action_items=[
+            PostMortemAction(text=text.strip(), position=position)
+            for position, text in enumerate(draft.action_items)
+            if text.strip()
+        ],
+    )
     previous_status = incident.status
     incident.status = IncidentStatus.RESOLVED.value
     session.add_all([incident, post_mortem])
@@ -247,5 +273,6 @@ async def generate_post_mortem(
         )
     )
     await session.commit()
-    await session.refresh(post_mortem)
-    return post_mortem
+    # Re-read through the document query so the response carries the incident title and the
+    # generated action items instead of raising when the serializer asks for them.
+    return await session.scalar(document_query().where(PostMortem.id == post_mortem.id))
