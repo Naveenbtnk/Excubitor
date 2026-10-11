@@ -206,6 +206,45 @@ def test_policy_reads_bounded_retries_from_settings():
     assert RetryPolicy.from_settings(Settings(llm_max_retries=0)).retries == 0
 
 
+def _budget(**overrides):
+    """A settings object with the deadline knobs pinned, so no local `.env` can decide them."""
+    values: dict[str, object] = {
+        "llm_max_retries": 2,
+        "llm_retry_base_delay": 0.5,
+        "llm_retry_max_delay": 8.0,
+        "llm_request_timeout": 30.0,
+        "llm_stream_idle_timeout": 60.0,
+    }
+    values.update(overrides)
+    return Settings(**values)
+
+
+def test_the_retry_budget_is_the_worst_case_wall_time_of_one_call():
+    """The number a proxy has to be patient enough for, derived rather than guessed at."""
+    # Three attempts of 30s plus the two jittered delays the policy may insert: 0.5 and 1.0.
+    assert _budget().llm_retry_budget_seconds == 91.5
+    # The stream idle bound sits below it, so it is not what a proxy must outwait here.
+    assert _budget().llm_patience_seconds == 91.5
+    # A stream's total length is deliberately unbounded, so its idle gap is the bound.
+    assert _budget(llm_stream_idle_timeout=200.0).llm_patience_seconds == 200.0
+
+    # No retries means no delays to insert, and a disabled deadline costs nothing.
+    assert _budget(llm_max_retries=0).llm_retry_budget_seconds == 30.0
+    assert _budget(llm_max_retries=0, llm_request_timeout=0).llm_retry_budget_seconds == 0.0
+
+    # A retry count the policy clamps to zero must not make the budget negative.
+    assert _budget(llm_max_retries=-3).llm_retry_budget_seconds == 30.0
+
+    # The backoff ceiling is honoured: 0.5, 1, 2, 4, then 8 twice -- not 0.5 through 16.
+    assert _budget(llm_max_retries=6).llm_retry_budget_seconds == 7 * 30.0 + 23.5
+
+    # A budget of zero is a real answer, not a missing one: nothing is bounded, so nothing is
+    # guaranteed either, and the warning that compares against it has to stay quiet rather than
+    # claim a proxy is too impatient to wait no time at all.
+    unbounded = _budget(llm_max_retries=0, llm_request_timeout=0.0, llm_stream_idle_timeout=0.0)
+    assert unbounded.llm_patience_seconds == 0.0
+
+
 def test_build_provider_wraps_unless_every_layer_is_switched_off(
     monkeypatch: pytest.MonkeyPatch,
 ):

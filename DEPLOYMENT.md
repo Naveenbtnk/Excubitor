@@ -52,6 +52,7 @@ setting appears in code without appearing there. The ones worth knowing about be
 | `LLM_QUOTA_LIMIT` | provider's free tier (20 for Gemini) | Project-wide provider budget per `LLM_QUOTA_WINDOW_SECONDS`. `0` disables it. |
 | `DEBUG` | `false` | Returns tracebacks to callers. Refused in production. |
 | `SEED_DEMO_DATA` | on outside production | Seeds three invented alerts into an empty database. |
+| `PROXY_READ_TIMEOUT_SECONDS` | `120` | The read timeout you configured in the proxy, so the API can compare its own worst case against it. Not enforced by the app — see [the proxy has to outwait the provider](#the-proxy-has-to-outwait-the-provider). |
 | `BACKEND_URL` | `http://backend:8000` | Where the Next.js server proxies `/api/*`. **A build argument, not a runtime one** — see below. |
 
 ## 2. The startup guard
@@ -121,6 +122,19 @@ ops.example.com {
         }
     }
 
+    # The rest of the API, with an explicit read timeout. Caddy has no default here, which is
+    # not the same as being patient: the value it inherits is the OS socket's, and a triage or
+    # post-mortem generation that is retried can legitimately take 90 seconds. See the section
+    # below for the arithmetic.
+    @api path /api/*
+    handle @api {
+        reverse_proxy frontend:3000 {
+            transport http {
+                read_timeout 300s
+            }
+        }
+    }
+
     handle {
         reverse_proxy frontend:3000
     }
@@ -154,6 +168,20 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # Everything else under /api/, with a read timeout chosen rather than defaulted. nginx's
+    # default is 60s, which is less than the ~92s the API can spend on one retried provider
+    # call, so the default drops the connection before the API can answer. The longer prefix
+    # above still wins for the stream: nginx matches the longest prefix, not the first one.
+    location /api/ {
+        proxy_pass http://frontend:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_read_timeout 300s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location / {
         proxy_pass http://frontend:3000;
         proxy_http_version 1.1;
@@ -172,6 +200,46 @@ server {
 ```
 
 With HTTPS in place: `COOKIE_SECURE=true`, and `CORS_ORIGINS=https://ops.example.com`.
+
+### The proxy has to outwait the provider
+
+The explicit read timeouts above are the point of this section, not decoration. A provider call
+can be retried, and the API holds the connection while it does, so the slowest answer it can
+produce is arithmetic rather than luck:
+
+| Bound | Default | What it costs |
+| --- | --- | --- |
+| `LLM_REQUEST_TIMEOUT` | 30s | one non-streaming attempt |
+| `LLM_MAX_RETRIES` | 2 | up to two more attempts, each behind a jittered delay |
+| **worst case** | **~92s** | 3 × 30s plus those delays — reported as `timeouts.retry_budget_seconds` by `GET /health/llm` |
+| `LLM_STREAM_IDLE_TIMEOUT` | 60s | the silence *between* streamed chunks, which is the only bound a stream has |
+
+A proxy left on nginx's own 60-second default therefore gives up in the middle of that, and the
+failure is worse than it sounds: the caller gets the proxy's bare error instead of the API's
+`503`, which carries the sentence explaining the wait *and* the request id that matches the log
+line holding the failure. The API's own layers already agree with each other — Gunicorn's
+default timeout is 120s, above the 92s worst case — so the proxy is the one place the budget can
+be missed. `GUNICORN_TIMEOUT` must stay above it too if you lower it.
+
+300s is what the examples use: comfortably above the worst case, and enough to also cover the
+dashboard's own hop in front of the API, which is a second layer with the same rule (in
+development that hop is what drops a slow generation, since nothing in it is configured to wait).
+
+Set `PROXY_READ_TIMEOUT_SECONDS` to whatever you actually configured, so the two numbers can be
+compared. Nothing in the app enforces it; the API compares its own worst case against it at
+startup, publishes both as `timeouts` on `GET /health/llm`, and logs a warning naming both when
+they disagree:
+
+```
+insecure_setting: PROXY_READ_TIMEOUT_SECONDS is 60s but this service can take 91.5s to answer
+(LLM_REQUEST_TIMEOUT x (LLM_MAX_RETRIES + 1) plus backoff, or LLM_STREAM_IDLE_TIMEOUT between
+streamed chunks), so a proxy in front would give up first; raise the proxy's read timeout for
+/api/ (see DEPLOYMENT.md)
+```
+
+Keeping the setting truthful is what makes the warning useful. If you would rather have no
+comparison at all, set `LLM_MAX_RETRIES=0` and `LLM_REQUEST_TIMEOUT=0` — and note that the second
+one means nothing bounds a stuck provider call except the proxy, which is its own warning.
 
 ### The dashboard's backend address is baked in at build time
 
@@ -200,8 +268,10 @@ overflow), so `workers × 15` is the ceiling one API node can ask PostgreSQL for
 - **Streams.** The Sandbox holds a worker connection open for the length of a generation. Keep
   worker count comfortably above your concurrent-generations estimate, or a handful of long
   answers will starve the JSON routes. The Gunicorn timeout must be larger than your slowest
-  generation; the request-level timeouts (`LLM_REQUEST_TIMEOUT`, `LLM_STREAM_IDLE_TIMEOUT`)
-  exist so a stuck generation is cut off long before Gunicorn's.
+  generation; the request-level timeouts (`LLM_REQUEST_TIMEOUT`, `LLM_STREAM_IDLE_TIMEOUT`) exist
+  so a stuck generation is cut off long before Gunicorn's. It also has to be larger than a
+  *retried* call's worst case, not just a single attempt — see
+  [the proxy has to outwait the provider](#the-proxy-has-to-outwait-the-provider).
 
 ```bash
 # docker-compose override, or your own CMD
@@ -347,6 +417,7 @@ rollback.
 | `401` from the webhook | The `X-API-Key` header does not match the token, or is missing. |
 | Everyone signed out after a deploy | `JWT_SECRET` changed. |
 | Sandbox answers arrive all at once | A proxy is buffering the stream; see section 4. |
+| A slow call ends in the proxy's own error instead of the API's `503` | The proxy's read timeout is shorter than the API's worst case; see [the proxy has to outwait the provider](#the-proxy-has-to-outwait-the-provider), and check `GET /health/llm` → `timeouts`. |
 | Rate limits feel looser than configured | `REDIS_URL` is unset with more than one worker, so each has its own ceiling. |
 | `503` with `Retry-After` on triage, post-mortems or the Sandbox | The provider budget is spent (`GET /health/llm` shows the allowance) or the provider is rate-limiting us. The wait is the provider's own number. |
 | A user reports an error with a request id | `grep <request_id>` in the API logs: every request line, the `internal_error` record and its traceback carry it. |

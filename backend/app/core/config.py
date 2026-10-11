@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     llm_stream_idle_timeout: float = 60.0
     llm_connect_timeout: float = 5.0
 
+    # How long the reverse proxy in front of this service will wait for a response, as
+    # configured there. Nothing here enforces it -- the proxy does -- but the worst case this
+    # service can take to answer is arithmetic (see ``llm_patience_seconds``), and a proxy that
+    # gives up first turns an honest 503 into a dead connection. The startup guard compares the
+    # two and names both numbers when they disagree, and the default matches the examples in
+    # DEPLOYMENT.md.
+    proxy_read_timeout_seconds: float = 120.0
+
     llm_rate_limit: int = 20
     embedding_rate_limit: int = 10
     rate_limit_window_seconds: int = 60
@@ -87,6 +95,36 @@ class Settings(BaseSettings):
     @property
     def llm_model_name(self) -> str:
         return self.gemini_model if self.llm_provider == "gemini" else self.ollama_model
+
+    @computed_field
+    @property
+    def llm_retry_budget_seconds(self) -> float:
+        """Worst-case wall time of one non-streaming provider call, retries included.
+
+        Every attempt is bounded by ``llm_request_timeout`` and every replay is preceded by a
+        jittered delay, so the ceiling is arithmetic rather than a guess: attempts times the
+        deadline, plus the largest delays the backoff policy can insert between them. It exists
+        so the requirement a proxy has to meet is a number this service can state instead of a
+        note in a document somebody has to remember -- see ``llm_patience_seconds``.
+        """
+        retries = max(0, self.llm_max_retries)
+        backoff = sum(
+            min(self.llm_retry_base_delay * 2**attempt, self.llm_retry_max_delay)
+            for attempt in range(retries)
+        )
+        return (retries + 1) * self.llm_request_timeout + backoff
+
+    @computed_field
+    @property
+    def llm_patience_seconds(self) -> float:
+        """How long the slowest possible answer can keep a connection open.
+
+        The larger of the retry budget above and the idle bound on a stream. A stream's total
+        length is deliberately unbounded -- it is bounded between chunks, so a slow but actively
+        producing generation is never cut off -- which means the longest a proxy may wait before
+        giving up is the idle gap, not the whole answer.
+        """
+        return max(self.llm_retry_budget_seconds, self.llm_stream_idle_timeout)
 
     @computed_field
     @property

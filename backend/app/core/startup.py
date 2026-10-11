@@ -11,8 +11,9 @@ works. Same for an empty ``ADMIN_PASSWORD`` (no way in, or worse, a guessable wa
 **Weak-but-present** is a warning. Only the operator knows what their secret looks like, and a
 process that refuses to start because a string contains the word "test" is a process that gets
 its guard removed. So a short secret, a placeholder-looking one, a session cookie that will
-travel over plain HTTP, an in-process counter store or a silent webhook are all reported at
-startup and then accepted -- the log is the right place for that judgement call.
+travel over plain HTTP, an in-process counter store, a silent webhook or a reverse proxy that
+will not wait as long as the provider layer can are all reported at startup and then accepted --
+the log is the right place for that judgement call.
 
 Neither path ever prints a value. Names only: the whole point is that the log is not a copy of
 the secret store.
@@ -79,6 +80,23 @@ def weak_setting_warnings(config: Settings) -> list[str]:
     if not config.alertmanager_webhook_token:
         warnings.append(
             "ALERTMANAGER_WEBHOOK_TOKEN is unset, so POST /webhooks/alertmanager answers 503"
+        )
+    # A deadline the proxy will not wait out is not a deadline: the caller gets whatever error
+    # the proxy produces -- usually a bare 502 or 504 with none of the request id or the sentence
+    # the API was about to send -- and the retry policy that caused it looks like a hang. Both
+    # numbers are ours, so this is a comparison rather than advice.
+    if config.llm_request_timeout <= 0:
+        warnings.append(
+            "LLM_REQUEST_TIMEOUT is 0, so no attempt is bounded and the proxy in front is the "
+            "only thing that will end a stuck provider call -- see DEPLOYMENT.md"
+        )
+    elif config.proxy_read_timeout_seconds < config.llm_patience_seconds:
+        warnings.append(
+            f"PROXY_READ_TIMEOUT_SECONDS is {config.proxy_read_timeout_seconds:g}s but this "
+            f"service can take {config.llm_patience_seconds:g}s to answer "
+            "(LLM_REQUEST_TIMEOUT x (LLM_MAX_RETRIES + 1) plus backoff, or "
+            "LLM_STREAM_IDLE_TIMEOUT between streamed chunks), so a proxy in front would give "
+            "up first; raise the proxy's read timeout for /api/ (see DEPLOYMENT.md)"
         )
     return warnings
 

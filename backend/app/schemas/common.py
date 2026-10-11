@@ -82,9 +82,24 @@ class LLMQuotaStatus(BaseModel):
     store: str
 
 
+class ProviderTimeouts(BaseModel):
+    """The slowest an answer can be, next to the deadline the proxy was given.
+
+    Published because the failure it prevents is invisible from inside the API: a proxy that
+    gives up first replaces our 503 with its own error and none of the diagnosis travels. An
+    operator can compare the last two numbers directly.
+    """
+
+    request_seconds: float
+    stream_idle_seconds: float
+    retry_budget_seconds: float
+    proxy_read_timeout_seconds: float
+
+
 class LLMHealthResponse(BaseModel):
     status: str
     provider: str
     model: str
     llm: str
     quota: LLMQuotaStatus | None = None
+    timeouts: ProviderTimeouts

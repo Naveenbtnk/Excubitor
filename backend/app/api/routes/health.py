@@ -6,7 +6,12 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.counter_store import get_counter_store
 from app.db.session import SessionLocal
-from app.schemas.common import HealthResponse, LLMHealthResponse, LLMQuotaStatus
+from app.schemas.common import (
+    HealthResponse,
+    LLMHealthResponse,
+    LLMQuotaStatus,
+    ProviderTimeouts,
+)
 from app.services.llm import get_llm
 from app.services.llm.base import LLMError
 from app.services.llm.quota import current_quota
@@ -53,5 +58,13 @@ async def health_llm():
             LLMQuotaStatus(**asdict(snapshot), store=get_counter_store().name)
             if snapshot
             else None
+        ),
+        # The deadline arithmetic, so "is the proxy in front patient enough" is answerable from
+        # the running service rather than only from DEPLOYMENT.md. Both numbers are ours.
+        timeouts=ProviderTimeouts(
+            request_seconds=settings.llm_request_timeout,
+            stream_idle_seconds=settings.llm_stream_idle_timeout,
+            retry_budget_seconds=settings.llm_retry_budget_seconds,
+            proxy_read_timeout_seconds=settings.proxy_read_timeout_seconds,
         ),
     )

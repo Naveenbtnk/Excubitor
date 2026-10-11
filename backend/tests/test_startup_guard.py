@@ -124,6 +124,60 @@ def test_the_optional_integrations_are_reported_when_they_are_off():
     verify_startup_settings(build(redis_url="", alertmanager_webhook_token="", cookie_secure=False))
 
 
+def test_a_proxy_less_patient_than_the_slowest_answer_is_reported():
+    """The failure this prevents: the proxy gives up first, so the API's 503 and its request id
+    never reach the caller and a bounded retry budget looks like a hang."""
+    config = build(proxy_read_timeout_seconds=60.0)  # nginx's own default
+    warnings = weak_setting_warnings(config)
+
+    joined = " ".join(warnings)
+    assert "PROXY_READ_TIMEOUT_SECONDS" in joined
+    # Both numbers, so the fix is arithmetic rather than trial and error.
+    assert "60s" in joined
+    assert "91.5s" in joined
+    # A judgement call like the others, so it must not be fatal.
+    verify_startup_settings(config)
+
+
+def test_the_warning_follows_whichever_bound_is_longer():
+    # Just under the slowest answer: still too impatient.
+    assert any(
+        "PROXY_READ_TIMEOUT_SECONDS" in w
+        for w in weak_setting_warnings(build(proxy_read_timeout_seconds=91.4))
+    )
+    # At or above it, the advice is gone.
+    assert not [
+        w
+        for w in weak_setting_warnings(build(proxy_read_timeout_seconds=91.5))
+        if "PROXY_READ_TIMEOUT_SECONDS" in w
+    ]
+
+    # A stream is bounded between chunks rather than in total, so a long idle bound is what the
+    # proxy has to outwait -- and it can be the longer of the two.
+    streaming = build(proxy_read_timeout_seconds=100.0, llm_stream_idle_timeout=150.0)
+    assert any("PROXY_READ_TIMEOUT_SECONDS" in w for w in weak_setting_warnings(streaming))
+
+
+def test_raising_the_retry_budget_without_the_proxy_is_reported():
+    patient = build(proxy_read_timeout_seconds=600.0)
+    assert not [
+        w for w in weak_setting_warnings(patient) if "PROXY_READ_TIMEOUT_SECONDS" in w
+    ]
+
+    # More attempts than the proxy can wait for is the same mistake in the other direction.
+    assert any(
+        "PROXY_READ_TIMEOUT_SECONDS" in w
+        for w in weak_setting_warnings(build(proxy_read_timeout_seconds=600.0, llm_max_retries=40))
+    )
+
+    # Disabling the deadline is its own warning rather than a comparison: there is no worst
+    # case to compare against, and the proxy becomes the only thing that ends a stuck call.
+    unbounded = build(llm_max_retries=0, llm_request_timeout=0.0, llm_stream_idle_timeout=0.0)
+    reported = " ".join(weak_setting_warnings(unbounded))
+    assert "LLM_REQUEST_TIMEOUT is 0" in reported
+    assert "PROXY_READ_TIMEOUT_SECONDS" not in reported
+
+
 ENV_LINE = re.compile(r"^\s*#?\s*([A-Z][A-Z0-9_]*)=")
 
 

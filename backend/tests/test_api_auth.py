@@ -74,6 +74,14 @@ async def test_llm_health_is_public_and_reports_provider(client: AsyncClient, mo
             "resets_in": 0,
             "store": "memory",
         },
+        # The deadline arithmetic, so an operator can compare the slowest answer against the
+        # patience they configured in the proxy without reading the source.
+        "timeouts": {
+            "request_seconds": settings.llm_request_timeout,
+            "stream_idle_seconds": settings.llm_stream_idle_timeout,
+            "retry_budget_seconds": settings.llm_retry_budget_seconds,
+            "proxy_read_timeout_seconds": settings.proxy_read_timeout_seconds,
+        },
     }
 
 
