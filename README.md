@@ -13,6 +13,7 @@ Excubitor is an AIOps dashboard for alert simulation, Gemini-powered incident tr
 - **Alertmanager ingestion** — `POST /webhooks/alertmanager` accepts a real Prometheus Alertmanager notification group behind a shared token, creating one alert per entry so a firing group and its resolutions arrive as they happened. See [Alert ingestion](#alert-ingestion).
 - **Provider resilience** — retries with full jitter, per-attempt and stream-idle timeouts, and quota failures classified apart from momentary rate limits so the wait it reports is the real one.
 - **Runbooks and post-mortems** — index operational runbooks with embeddings and generate markdown post-mortems from incidents.
+- **A post-mortem is a workflow, not a blob.** A generation lands as a `draft` with the sections a team actually reviews (timeline, root cause, contributing factors, impact) beside its narrative; it moves through `in_review` to `published`, every transition recorded on the incident's own timeline, and it downloads as a markdown file. Follow-ups carry an owner and a due date, and the Overview shows what is overdue. See [Post-mortems](#post-mortems).
 
 ## Architecture
 
@@ -268,7 +269,72 @@ Implementing a `PATCH` as "assignee absent means leave it, `null` means unassign
 the two have to be distinguishable or changing a status would unassign somebody.
 
 Triage writes the first entry, and generating a post-mortem writes the last one (it resolves the
-incident). The incident list on the Post-Mortems page links to each incident's timeline.
+incident). Reviewing a document writes to the same log: moving a post-mortem between states is a
+`post_mortem` entry carrying the old and new value, so "who published this, and when" is answered
+by the incident rather than only by a field the document keeps. The incident list on the
+Post-Mortems page links to each incident's timeline.
+
+### Post-mortems
+
+Generating a document is an incident action, so it stays on the incident (and it resolves the
+incident). Everything that happens to the document afterwards — reading it, editing it, moving it
+through review, downloading it — is its own collection, because a review queue and an export are
+not incident-scoped.
+
+| Route | Role | What it does |
+| --- | --- | --- |
+| `GET /post-mortems` | any | Every document the caller may read, most recently updated first |
+| `GET /post-mortems/{id}` | any | One document, with its action items |
+| `PATCH /post-mortems/{id}` | operator | Edits the sections, replaces the action items, moves the status |
+| `PATCH /post-mortems/{id}/actions/{id}` | operator | Edits one follow-up, so ticking a box is one small request |
+| `GET /post-mortems/{id}/export.md` | any | The rendered markdown, as a download |
+| `POST /incidents/{id}/post-mortem` | operator | Generates one — idempotent, rate limited and budgeted like any other provider call |
+
+`GET /post-mortems` accepts `status` and `incident_id` filters and the usual pagination envelope,
+ordered by `updated_at` rather than `created_at`: a review queue is sorted by what somebody last
+touched, not by when the document was first written.
+
+**Visibility is a role question, and the answer is wider than "its author and Admins".** A Viewer
+sees `published` documents only — a draft is a claim nobody has stood behind yet. An Operator or
+Admin sees every draft, because the review pipeline needs a reader: whoever moves a document into
+`in_review` and whoever publishes it have to be able to open it, and a reviewer who can only see
+their own drafts is not a reviewer. A Viewer asking for a draft by id gets `404` rather than `403`:
+whether a hidden document exists is itself information that role has no use for.
+
+**The status is a pipeline, not a flag.** `draft` is where every generation lands, `in_review` is
+the state a document is read in, and `published` is what a Viewer may see. Transitions are not
+forced through the middle — a one-line correction can go straight from `draft` to `published` —
+because what matters is the event being written down, not the route taken. `published_at` is set
+when a document is published and cleared when it leaves that state.
+
+**The narrative and the sections are both kept**, and nothing is parsed out of the prose.
+`content` is what the model wrote and what a reader skims; the four structured fields are what the
+review, the export and the action-item strip are built from. A parser deciding what a paragraph
+meant is how a post-mortem quietly loses a detail nobody notices until an audit.
+
+**Action items are rows, not a JSON blob**, because "what is outstanding, by when" is a query
+rather than a document. On a `PATCH`, `action_items` replaces the list: an item sent back with its
+`id` is the same item, so a link or a half-finished edit elsewhere does not point at a row that was
+deleted and recreated underneath it, an item without an `id` is created, and anything the client no
+longer lists is removed — a form that edits a set of rows has no other way to say "this one is
+gone". Array order is the stored `position`, which is what makes an edited list stay edited.
+`owner` is an email, resolved to a user when one matches and kept as written when none does,
+because a follow-up is often assigned to somebody who has not signed in yet. Owners and due dates
+from the model are dropped: those are commitments between people, and inventing them would put a
+fabricated deadline on somebody's list.
+
+`GET /overview` carries the strip that makes them actable — `action_items: {open, overdue, items}`
+counting every open follow-up across the documents the caller may read, earliest due date first
+with undated items last, capped at five entries. The two counts are the number that matters; the
+list is the handful worth acting on today.
+
+**The export is a pure function of the document**, which is why the exact bytes a download produces
+are pinned by a test. Sections come out in a fixed order, and an empty one is written as
+`_Not recorded._` rather than omitted: an export that silently drops a section is indistinguishable
+from a document that never had one, and the whole point of a post-mortem is that the gaps are
+visible. Action items render as a table, with a due date in the past marked `(overdue)` at render
+time and pipes or newlines in a cell flattened so a stray character cannot break the row. The
+response is `text/markdown`, served as an attachment.
 
 ### Alert ingestion
 
@@ -426,7 +492,8 @@ reachability and reports the remaining provider budget (both are public, for orc
    **Simulate** — see [Alert ingestion](#alert-ingestion).
 5. Open an incident's **Timeline** to see who changed what, comment on it, reassign it, and move
    its status forward — see [Incident timeline](#incident-timeline).
-6. Generate a markdown post-mortem from the incident list.
+6. Generate a post-mortem from the incident list, edit its sections, move it to **In review**,
+   publish it, and download the markdown — see [Post-mortems](#post-mortems).
 
 ## Known limitations
 

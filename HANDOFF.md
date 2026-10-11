@@ -18,9 +18,10 @@ and generates AI-written post-mortems. It is a two-service app:
 - **`compose.yaml`** at the repo root runs the whole stack (PostgreSQL/pgvector + backend +
   frontend) with Docker.
 
-The product has five user-facing screens: **Overview**, **Alerts**, **Sandbox** (free-form chat
-with the LLM), **Knowledge** (runbook upload + RAG query), **Post-Mortems**, plus a **Login**
-page gating all of them.
+The product has six user-facing screens: **Overview**, **Alerts**, **Sandbox** (free-form chat
+with the LLM), **Knowledge** (runbook upload + RAG query), **Post-Mortems**, and an incident's own
+**Timeline** page, plus a **Login** page gating all of them. Three roles — Admin, Operator and
+Viewer — are enforced on every route, not in the UI.
 
 ## 2. Current status — everything below is DONE and verified
 
@@ -50,13 +51,22 @@ build and run healthy.
 - **Alembic**: one migration (`backend/alembic/versions/202609290001_initial_schema.py`)
   creates all tables plus `CREATE EXTENSION IF NOT EXISTS vector` and an HNSW index on
   `runbook_chunks.embedding`.
-- **Routes implemented** (all except `/health` require the session cookie):
-  `GET /health`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `GET /overview`,
-  `GET /alerts`, `POST /alerts`, `POST /alerts/simulate`, `GET /alerts/scenarios`,
-  `POST /alerts/{id}/ack`, `GET /knowledge/runbooks`, `POST /knowledge/runbooks`,
-  `POST /knowledge/runbooks/upload`, `POST /knowledge/query`, `POST /sandbox/chat`,
-  `POST /sandbox/stream` (SSE), `GET /incidents`, `POST /incidents/triage/{alert_id}`,
-  `GET /incidents/{id}/post-mortem`, `POST /incidents/{id}/post-mortem`.
+- **Routes implemented.** Everything requires the session cookie and a role except the two
+  health probes, `POST /auth/login` and the webhook:
+  - public: `GET /health`, `GET /health/llm`, `POST /auth/login`, `POST /webhooks/alertmanager`
+    (shared token, not a session).
+  - session: `POST /auth/logout`, `GET /auth/me`, `GET /overview`, `GET /alerts`, `POST /alerts`,
+    `POST /alerts/simulate`, `GET /alerts/scenarios`, `POST /alerts/{id}/ack`,
+    `GET /knowledge/runbooks`, `POST /knowledge/runbooks`, `POST /knowledge/runbooks/upload`,
+    `POST /knowledge/query`, `POST /sandbox/chat`, `POST /sandbox/stream` (SSE),
+    `GET /incidents`, `GET /incidents/{id}`, `PATCH /incidents/{id}`,
+    `GET /incidents/{id}/activity`, `POST /incidents/{id}/comments`,
+    `POST /incidents/triage/{alert_id}`, `GET /incidents/{id}/post-mortem`,
+    `POST /incidents/{id}/post-mortem`.
+  - the document's own collection (see §15): `GET /post-mortems`, `GET /post-mortems/{id}`,
+    `PATCH /post-mortems/{id}`, `PATCH /post-mortems/{id}/actions/{id}`,
+    `GET /post-mortems/{id}/export.md`.
+  - admin only: `GET /users`, `POST /users`, `PATCH /users/{id}`.
 - **Verified**: `ruff check app tests` passes clean. `pytest` passes (4 tests: password
   hashing/JWT round-trip, RAG chunking). `docker build` succeeds. Container boots, runs Alembic
   migration, seeds admin, passes its healthcheck.
@@ -589,3 +599,121 @@ server, and what reaches the browser is a sentence we wrote.
   capture from the 429 that prompted this. The CI audit step is currently red on pre-existing
   advisories in `next@16.3.6` and `sharp@0.35.4` (both unchanged by this work; `npm audit fix`
   covers them) and should be handled in its own commit.
+
+## 14. Session update — roles, an incident's history, and real webhooks
+
+Three things that took the app from "one admin and a status column" to something a team runs with.
+They landed before the rebrand below and were not written up at the time; this section and §15
+close that gap.
+
+- **Roles are enforced per route** (`app/core/rbac.py`, `app/api/deps.py::require_role`).
+  `Role` is `admin` / `operator` / `viewer`, and privilege is expressed as a *rank* rather than a
+  permission matrix, so "may this caller do X" stays one comparison and a route cannot end up with
+  a list that drifts out of step with the others. `rank()` fails **closed** (an unrecognised stored
+  value ranks below Viewer and grants nothing), because the alternative turns a typo into an
+  administrator. `ROLE_VALUES` also generates the migration's check constraint, so the database and
+  the module cannot disagree about what a valid role is. The role is read from the user row on
+  every request, so a demotion takes effect on the next call rather than at the next login — which
+  is what revoking access during an incident has to mean. Hiding a button is a courtesy; a Viewer
+  calling a write route directly gets `403`.
+- **An incident has an append-only history** (`app/models/incident_event.py`,
+  `app/services/timeline.py::incident_event`, `app/core/incidents.py::IncidentEventKind`). Nothing
+  updates or deletes an entry, `actor` is the email of whoever acted so the record survives a
+  rename, and `from_value`/`to_value` hold the diff next to the sentence in `body` rather than
+  making a reader parse it. The helper deliberately does **not** commit: the caller is already in
+  the transaction that changes the incident, and an event in its own commit could outlive a change
+  that rolled back. Two behaviours are pinned by tests: re-saving the same status writes nothing
+  (a log people read should not fill up with no-ops), and `PATCH` treats an absent `assignee` as
+  "leave it" while `null` means "unassign" — the two have to be distinguishable or changing a
+  status would unassign somebody. `GET /incidents/{id}/activity` is the one list that reads
+  oldest-first, because a timeline is read the way it happened.
+- **Real Alertmanager ingestion** (`app/api/routes/webhooks.py`,
+  `app/services/alertmanager.py`, `app/schemas/webhooks.py`). The caller is Prometheus, which has no
+  cookie and no role, so `X-API-Key` compared with `compare_digest` is its whole identity —
+  constant time, because a check that returns early on the first wrong byte is a token oracle. The
+  check is a FastAPI **dependency**, which matters: body validation runs before the endpoint, so an
+  unauthenticated caller would otherwise get a schema error back, telling someone with a wrong key
+  the shape of a private API. An **unset** token answers `503` ("not configured") rather than
+  accepting anything, so a deployment that never set it up is never an open write route; a missing
+  or wrong key answers `401`. Each entry of `alerts[]` becomes one alert row — the **per-alert**
+  status is read, not the group's, because a group is `firing` as a whole even when one of its
+  alerts has just recovered. The payload models are lenient on purpose (`extra="ignore"`):
+  Alertmanager owns that shape and we are not in a position to make it validate anything. The
+  response is a receipt — `{accepted, opened, resolved, alert_ids}` — so its logs and ours line up.
+  Deduplication is deliberately absent and covered in the README's "Known limitations".
+- **Migrations** — `202610080001_rbac_roles.py` (adds `users.role`, backfilled to `admin` for the
+  seeded account, plus the check constraint) and `202610080002_incident_timeline.py` (creates
+  `incident_events`, backfilling one `created` entry per existing incident so old incidents are not
+  blank).
+- **Tests** — `backend/tests/test_rbac.py` (a full authz sweep: every data route is called by
+  every role and the expected allow/deny is asserted, so a new route added without a role
+  dependency fails the sweep), `test_api_incidents.py` (the timeline routes and the no-op rule) and
+  `test_webhooks.py` (token missing/wrong/unset, the mapping table, resolved-vs-firing, an empty
+  group, and a repeated delivery creating the alerts again — the known limitation, pinned rather
+  than hidden).
+
+## 15. Session update — the name, the front door, and the post-mortem workflow
+
+Three commits, in order: the product got its real name, the sign-in page became the front door, and
+the post-mortem stopped being one blob and became something a team signs off.
+
+**The name.** The project is **Excubitor** (still "CloudOps AI" as the subtitle). What was
+renamed is presentation only, and that was a constraint rather than an accident: `APP_NAME` — the
+*value*, not the variable — the triage system prompt, the config default and the package
+description. No environment variable *name*, no database name or DSN, no image name and no Python
+package name moved, so nothing a deployment stores or addresses changed and no migration was
+needed. The mark is hand-written SVG — a watchfire inside a shield, one path with two subpaths
+filled `evenodd` so the flame is a real hole and the whole thing takes a single `currentColor`,
+which is what lets the same drawing sit on the dark nav tile, on the brand panel and in the
+favicon. `components/Logo.tsx` exports the path data and `app/icon.svg` +
+`public/apple-touch-icon.svg` are built from that one constant, so the tab icon cannot drift from
+the nav; the geometry is intentionally coarse because it has to survive 16px.
+
+**The sign-in page** (`app/login/page.tsx`, `components/BrandPanel.tsx`) is now a two-panel
+layout — the mark and tagline on one side, the form on the other, collapsing to a header plus form
+below `lg`. Three decisions worth keeping: the fields are **empty on purpose** (the old page
+pre-filled the seeded admin's credentials, which turns a sign-in page into a button anyone who can
+reach it may press — the developer hint is now a muted footnote naming `ADMIN_EMAIL` /
+`ADMIN_PASSWORD` instead), the button is a real `type="submit"` so Enter in either field signs in,
+and a failure renders as an inline `role="alert"` sentence from the API rather than a bare status
+code. Nothing about the exchange changed: same `POST /auth/login`, same httpOnly cookie, same
+`next` destination.
+
+**The post-mortem workflow.** Generation still lives on the incident, because it is an incident
+action and it still resolves the incident; everything afterwards is its own collection. The
+migration `202610090001_post_mortem_workflow.py` adds the reviewed sections
+(`timeline_summary`, `root_cause`, `contributing_factors`, `impact`), a `status`
+(`draft` → `in_review` → `published`), `author`/`author_id`, `published_at`, `updated_at`, and a
+`post_mortem_actions` table with owner, due date, status and `position`.
+
+- **Existing rows were backfilled to `published`, not `draft`.** They were created by an operator
+  through the API and have been readable by every role since, so defaulting them to draft would
+  have hidden documents people can already see. New rows still start as `draft`. The narrative in
+  `content` was left untouched: the structured sections sit *beside* it, and nothing is parsed out
+  of prose.
+- **Visibility is one predicate in one place** (`app/services/postmortems.py::visible_to`), because
+  two routers ask the question — the collection and the incident-scoped generator — and spreading
+  it is how one of them ends up leaking a draft. Operators and Admins see every draft, since a
+  reviewer who can only see their own drafts is not a reviewer; a Viewer sees `published` only and
+  gets a `404` (not `403`) for a draft by id.
+- **The export is a pure function** (`render_markdown`) of the document, which is why the exact
+  bytes a download produces can be pinned. Empty sections render as `_Not recorded._` rather than
+  being omitted, and overdue dates are marked at render time.
+- **Action items replace wholesale on a `PATCH`**, row by row: an item returned with its `id` is
+  the same row, an item without one is created, and anything missing from the list is removed —
+  a form that edits a set of rows has no other way to say "this one is gone". Array order becomes
+  `position`. `owner` is an email resolved to a user when one matches and kept as written when none
+  does; owners and due dates suggested by the model are dropped, because a fabricated deadline on
+  somebody's list is worse than an empty one. `GET /overview` gained the strip that makes them
+  actable: `{open, overdue, items[]}`, earliest due date first with undated items last.
+- **Tests** — `backend/tests/test_post_mortem_workflow.py` (the pipeline and its timeline entries,
+  the replace semantics, the export bytes, the strip's ordering and counts, and the role
+  visibility rules), plus new route cases in `test_api_auth.py`'s `PROTECTED_ROUTES` and
+  `test_rbac.py`'s `READS`, so the new collection is covered by the authz sweep rather than beside
+  it. Frontend cases cover the workspace and the Overview strip in `app/post-mortems/page.test.tsx`
+  and `app/page.test.tsx`.
+- **Verified in a browser**, end to end on the production build: generate → edit the sections →
+  move to `in_review` → publish (the timeline records each transition) → download the markdown.
+- **One thing that is still a proxy question, not an app question** — a slow generation can spend
+  longer than a proxy's default read timeout, and the retry budget makes that worse: see §16,
+  which is the next session.
