@@ -7,12 +7,12 @@
   <p><strong>AI night-watch for your infrastructure — from raw alert to published post-mortem, in one console.</strong></p>
   <p>
     <a href="https://github.com/your-org/excubitor/actions/workflows/ci.yml"><img src="https://github.com/your-org/excubitor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-    <img src="https://img.shields.io/badge/backend_tests-291_passed-brightgreen" alt="291 backend tests passing">
-    <img src="https://img.shields.io/badge/frontend_tests-79_passed-brightgreen" alt="79 frontend tests passing">
+    <img src="https://img.shields.io/badge/backend_tests-307_passed-brightgreen" alt="307 backend tests passing">
+    <img src="https://img.shields.io/badge/frontend_tests-83_passed-brightgreen" alt="83 frontend tests passing">
     <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
     <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license">
   </p>
-  <p><strong>Live demo:</strong> <em>coming soon.</em> The screenshots and the 60-second walkthrough below were captured from the local Docker stack.</p>
+  <p><strong>Live demo:</strong> <em>none hosted — two commands to your own.</em> <code>cp backend/.env.example backend/.env</code>, then <code>docker compose up --build -d</code>. Nothing but the Gemini key is required, and <code>DEMO_ACCOUNT_ENABLED=true</code> publishes a read-only login your visitors can use. Every screenshot and the walkthrough below came from exactly that stack.</p>
 </div>
 
 ---
@@ -106,8 +106,8 @@ The decisions a reviewer would otherwise have to reverse-engineer, and the reaso
 
 | | |
 | --- | --- |
-| **Backend** | **291 tests**, `pytest -q` in ~90 s — unit tests plus integration tests against a real PostgreSQL 16 + pgvector and a real Redis. |
-| **Frontend** | **79 tests** across 13 files (`vitest run`), plus `tsc --noEmit` and a production `next build`. |
+| **Backend** | **307 tests**, `pytest -q` in ~87 s — unit tests plus integration tests against a real PostgreSQL 16 + pgvector and a real Redis. |
+| **Frontend** | **83 tests** across 13 files (`vitest run`), plus `tsc --noEmit` and a production `next build`. |
 | **CI** | One workflow, three jobs. Five checks block a commit from a green build: `ruff`, `pytest`, `tsc`, `vitest`, and `npm audit --omit=dev --audit-level=high`; the Docker images build only after all of them pass. |
 
 ```bash
@@ -237,6 +237,11 @@ point anyone else at the deployment.
   committed.
 - **`POST /webhooks/alertmanager` compares its shared token in constant time** and answers `503`
   rather than accepting anything when that token is unset.
+- **The optional demo login is a Viewer, and its credential is public on purpose.** The server
+  provisions it at startup, serves it from `GET /auth/demo` so the sign-in page can prefill it,
+  forces the role back to Viewer on every boot (a promotion made in the UI does not survive a
+  restart) and gives it one shared AI allowance so a single visitor cannot spend the day's budget.
+  Serve it only where a stranger reading your demo data is acceptable.
 - Do not commit `backend/.env`; set `COOKIE_SECURE=true` and restrict `CORS_ORIGINS` for HTTPS
   deployments.
 
