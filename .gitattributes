@@ -1,0 +1,23 @@
+# Line endings.
+#
+# The repository stores LF. Without this, a Windows checkout with core.autocrlf=true hands out
+# CRLF working copies and Git has to guess on the way back in, which is how a one-line edit
+# turns into a whole-file diff in review. `eol=lf` settles it for every text file: LF in the
+# index, LF in the working tree, on every platform.
+* text=auto eol=lf
+
+# Assets, where a newline conversion would silently corrupt the file.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.mp4 binary
+*.webm binary
+
+# The post-mortem export is compared byte for byte in the tests, so it is not a place to be
+# clever about normalisation either.
+*.md text eol=lf
