@@ -175,6 +175,40 @@ Services:
 | PostgreSQL / pgvector | `localhost:5434` |
 | Redis | `localhost:6379` |
 
+## First steps after deploying
+
+The seeded administrator exists so the first sign-in works, not so it stays. Do this before you
+point anyone else at the deployment.
+
+1. **Set `ADMIN_PASSWORD` before the first boot, and treat it as one-shot.** The value seeds the
+   account on the first start and the startup guard refuses to start in production with it empty or
+   still set to the value shipped in `.env.example`. Changing the variable later does not change the
+   stored password — the seeding is *insert if absent* — so rotate it from the **Users** page once
+   the app is up, and keep the environment value as the bootstrap credential.
+2. **Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`, then create your own admin.** *Users* → **Add
+   user**, role **Admin**, the address and name you actually use. Passwords are hashed on the way
+   in and never leave the database in a readable form.
+3. **Sign in as your own account and demote the seeded one.** *Users* → the seeded row → **Viewer**.
+   The API refuses to demote the last administrator
+   (*"This is the last administrator; promote someone else before changing this role."*) — that guard
+   is why step 2 comes first, and it is the difference between a demotion and locking every human out
+   of your own deployment.
+4. **Get rid of the seeded account.** There is no user-delete route yet, so the safe resting state is
+   the **Viewer** role from step 3: it can read what any viewer can read and write nothing. To remove
+   the row outright, delete it in PostgreSQL:
+
+   ```bash
+   docker compose exec db psql -U cloudops -d cloudops_ai \
+     -c "DELETE FROM users WHERE email = 'admin@cloudops.local';"
+   ```
+
+5. **Decide about the public demo deliberately.** `DEMO_ACCOUNT_ENABLED=true` requires
+   `DEMO_ACCOUNT_PASSWORD`, provisions a shared **Viewer** login at `DEMO_ACCOUNT_EMAIL`, publishes
+   that credential at `GET /auth/demo` (which is what the sign-in page's **Try the demo** button
+   uses) and gives it one shared AI allowance of `DEMO_ACCOUNT_RATE_LIMIT` calls per
+   `LLM_QUOTA_WINDOW_SECONDS`. Anyone who can reach the deployment may read it as that account; the
+   startup log says so on every boot. Leave it unset for a private deployment.
+
 ## Going deeper
 
 | Document | What is in it |
