@@ -49,6 +49,11 @@ def production_problems(config: Settings) -> list[str]:
         problems.append("JWT_SECRET is unset or is still the value this repository ships with")
     if not config.admin_password:
         problems.append("ADMIN_PASSWORD is unset, so the seeded administrator has no password")
+    if config.demo_account_enabled and not config.demo_account_password:
+        problems.append(
+            "DEMO_ACCOUNT_ENABLED is on but DEMO_ACCOUNT_PASSWORD is unset, so the demo login "
+            "is either absent or has no password"
+        )
     if config.llm_provider == "gemini" and not config.gemini_api_key:
         problems.append("GEMINI_API_KEY is unset while LLM_PROVIDER is gemini")
     if config.debug:
@@ -71,6 +76,21 @@ def weak_setting_warnings(config: Settings) -> list[str]:
         warnings.append(
             "COOKIE_SECURE is false, so the session cookie is sent over plain HTTP; "
             "set it to true behind HTTPS"
+        )
+    if config.demo_account_enabled and not config.demo_account_password:
+        warnings.append(
+            "DEMO_ACCOUNT_ENABLED is on but DEMO_ACCOUNT_PASSWORD is unset, so no demo login "
+            "is provisioned and nothing can sign in as one"
+        )
+    elif config.demo_login_available:
+        # Deliberately loud. This is a shared credential that is published by GET /auth/demo, so
+        # the operator is telling the whole internet it may read this deployment as that account.
+        warnings.append(
+            "DEMO_ACCOUNT_ENABLED is on, so anyone who can reach this deployment may sign in as "
+            f"{config.demo_account_email} and read everything a Viewer can, with "
+            f"{config.demo_account_rate_limit} AI calls per {config.llm_quota_window_seconds}s "
+            "between all of them; the password is published by GET /auth/demo, so it must be a "
+            "value used nowhere else"
         )
     if not config.redis_url:
         warnings.append(

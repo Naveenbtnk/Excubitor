@@ -21,7 +21,7 @@ from app.core.counter_store import close_counter_stores
 from app.core.errors import InternalErrorMiddleware
 from app.core.observability import RequestContextMiddleware, configure_logging, request_id_of
 from app.core.startup import verify_startup_settings
-from app.db.session import close_db, create_schema, seed_admin, seed_demo_data
+from app.db.session import close_db, create_schema, seed_admin, seed_demo_account, seed_demo_data
 from app.services.llm.base import LLMError, LLMTransientError
 from app.services.llm.errors import public_llm_error
 
@@ -31,6 +31,9 @@ async def lifespan(app: FastAPI):
     if not settings.is_production:
         await create_schema()
     await seed_admin()
+    # The shared read-only login, when a deployment has asked for one. Re-asserted on every
+    # start rather than created once: see `seed_demo_account`.
+    await seed_demo_account()
     # Demo data is opt-out as well as opt-in: see `should_seed_demo_data`.
     await seed_demo_data()
     yield

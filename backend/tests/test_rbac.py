@@ -37,12 +37,15 @@ RUNBOOK_BODY = {
 }
 
 # Writes any Operator may perform. The value is the request kwargs.
+#
+# The sandbox used to be listed here and is not any more: asking the model about the corpus is
+# reading, and what bounds it is the provider budget rather than a role -- see
+# ``test_a_viewer_may_ask_the_sandbox``. Nothing was loosened by that: every route that changes
+# something is still in this list.
 OPERATOR_WRITES: list[tuple[str, str, dict]] = [
     ("POST", "/alerts", {"json": ALERT_BODY}),
     ("POST", "/alerts/simulate", {}),
     ("POST", "/knowledge/runbooks", {"json": RUNBOOK_BODY}),
-    ("POST", "/sandbox/chat", {"json": {"message": "hello"}}),
-    ("POST", "/sandbox/stream", {"json": {"message": "hello"}}),
 ]
 
 # Routes that need a row to exist before they can be reached at all.
@@ -116,6 +119,23 @@ async def test_a_viewer_may_search_the_knowledge_base(client: AsyncClient, make_
     response = await client.post("/knowledge/query", json={"question": "pool exhaustion"})
 
     assert response.status_code == 200, response.text
+
+
+async def test_a_viewer_may_ask_the_sandbox(client: AsyncClient, make_user, login_as):
+    """The same reading rule, for the sandbox: it spends provider budget, not state.
+
+    What that costs is bounded twice over already -- the project-wide quota in
+    ``app.services.llm.quota``, and ``demo_guard`` on the shared demo login -- so a role is the
+    wrong place to bound it, and a Viewer who can read every incident may ask about one.
+    """
+    await make_user(VIEWER, Role.VIEWER.value)
+    await login_as(VIEWER)
+
+    chat = await client.post("/sandbox/chat", json={"message": "how do I fix this?"})
+    stream = await client.post("/sandbox/stream", json={"message": "how do I fix this?"})
+
+    assert chat.status_code == 200, chat.text
+    assert stream.status_code == 200, stream.text
 
 
 # --- writes are gated ------------------------------------------------------------------

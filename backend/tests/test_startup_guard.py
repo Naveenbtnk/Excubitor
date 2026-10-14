@@ -23,7 +23,12 @@ STRONG_SECRET = "Kf3n2p9wQz8sVb4tRy6uJm1hLd7gXc5eQa0Z"
 
 
 def build(**overrides) -> Settings:
-    """A production deployment that is properly configured, before the overrides."""
+    """A production deployment that is properly configured, before the overrides.
+
+    Every setting this module reasons about is named here rather than left to the environment.
+    ``Settings`` reads a ``.env`` file, so a developer who turned the demo login on locally would
+    otherwise get a failure about a deployment this test never described.
+    """
     values: dict[str, object] = {
         "environment": "production",
         "jwt_secret": STRONG_SECRET,
@@ -33,6 +38,7 @@ def build(**overrides) -> Settings:
         "cookie_secure": True,
         "redis_url": "redis://cache:6379/0",
         "alertmanager_webhook_token": "shared-token",
+        "demo_account_enabled": False,
     }
     values.update(overrides)
     return Settings(**values)
@@ -44,6 +50,40 @@ def test_a_properly_configured_deployment_has_nothing_to_report():
     assert production_problems(config) == []
     assert weak_setting_warnings(config) == []
     verify_startup_settings(config)  # does not raise
+
+
+def test_an_enabled_demo_login_is_announced_at_startup():
+    """A deployment publishing a shared credential is healthy, and says so out loud."""
+    password = "a-shared-password-nobody-else-uses"
+    config = build(demo_account_enabled=True, demo_account_password=password)
+
+    assert production_problems(config) == []
+    warnings = weak_setting_warnings(config)
+
+    assert len(warnings) == 1
+    assert "demo" in warnings[0]
+    assert "Viewer" in warnings[0]
+    # The address is what an operator needs to recognise; the password reaches the log through no
+    # path at all, however loud the warning is.
+    assert password not in warnings[0]
+
+
+def test_an_enabled_demo_login_without_a_password_is_a_problem_in_production():
+    """Enabling the feature without a credential provisions nothing, so production refuses it."""
+    config = build(demo_account_enabled=True, demo_account_password="")
+
+    problems = production_problems(config)
+
+    assert len(problems) == 1
+    assert "DEMO_ACCOUNT_PASSWORD" in problems[0]
+
+
+def test_the_demo_login_stays_off_out_of_the_box():
+    """No env file and no overrides: the defaults are what a deployment gets for free."""
+    config = Settings(_env_file=None)
+
+    assert config.demo_account_enabled is False
+    assert config.demo_login_available is False
 
 
 @pytest.mark.parametrize(

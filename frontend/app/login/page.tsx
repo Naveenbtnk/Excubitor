@@ -1,12 +1,24 @@
 "use client";
 
-import { ArrowRight, Eye, EyeOff, LoaderCircle, TriangleAlert } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, LoaderCircle, Sparkles, TriangleAlert } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
+import useSWR from "swr";
 import { BrandPanel } from "@/components/BrandPanel";
 import { Logo } from "@/components/Logo";
-import { api } from "@/lib/api";
+import { api, fetcher } from "@/lib/api";
 import { isDevBuild } from "@/lib/env";
+
+/**
+ * What the API will say about a shared demo login, if the deployment has one. Both fields are
+ * absent rather than empty when the feature is off, so "nothing to offer" is one shape rather
+ * than two, and the button below is rendered from `enabled` alone.
+ */
+interface DemoCredentials {
+  enabled: boolean;
+  email?: string | null;
+  password?: string | null;
+}
 
 /**
  * The sign-in form. Nothing about the exchange changed when the page was rebuilt -- same POST to
@@ -23,6 +35,9 @@ function LoginForm() {
   const [reveal, setReveal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Asked of the backend rather than decided here: whether a shared login exists is a deployment
+  // decision, and this is the one request that runs before a session does.
+  const { data: demo } = useSWR<DemoCredentials>("/auth/demo", fetcher);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -124,6 +139,28 @@ function LoginForm() {
           </>
         )}
       </button>
+
+      {demo?.enabled && (
+        <div className="mt-5 border-t border-black/5 pt-5">
+          {/* A `type="button"`, so pressing it fills the form rather than submitting it: the
+              visitor still signs in through the same route everyone else does, and still sees
+              the session it creates. */}
+          <button
+            type="button"
+            onClick={() => {
+              setEmail(demo.email ?? "");
+              setPassword(demo.password ?? "");
+            }}
+            className="btn-secondary w-full gap-2 py-2.5"
+          >
+            <Sparkles size={15} aria-hidden />
+            Try the demo
+          </button>
+          <p className="mt-3 text-center text-xs leading-5 text-neutral-500">
+            The shared visitor account: it can read everything and change nothing.
+          </p>
+        </div>
+      )}
     </form>
   );
 }

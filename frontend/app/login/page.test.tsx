@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import LoginPage from "./page";
 import { isDevBuild } from "@/lib/env";
@@ -46,7 +46,14 @@ function stubLogin(route: (url: string, method: string) => Response | undefined)
         body: typeof init?.body === "string" ? init.body : undefined,
         credentials: init?.credentials,
       });
-      return route(url, method) ?? jsonResponse({ detail: `Unstubbed request: ${method} ${url}` }, 404);
+      const response = route(url, method);
+      if (response) return response;
+      // Every test asks about the demo login on mount, whether it cares or not. The default is
+      // "this deployment has none", which is also the honest default for a test.
+      if (url.includes("/auth/demo")) {
+        return jsonResponse({ enabled: false, email: null, password: null });
+      }
+      return jsonResponse({ detail: `Unstubbed request: ${method} ${url}` }, 404);
     })
   );
 
@@ -70,9 +77,12 @@ afterEach(() => {
   search = "";
 });
 
-it("opens on a brand panel: the mark, the name and the watch tagline", () => {
+it("opens on a brand panel: the mark, the name and the watch tagline", async () => {
   stubLogin(() => undefined);
   const { container } = renderPage(<LoginPage />);
+  // The page asks about a shared demo login as it mounts. Letting that answer land inside `act`
+  // keeps a request that is still in flight from becoming a state update after the test.
+  await act(async () => {});
 
   expect(screen.getByRole("heading", { level: 1, name: "Excubitor" })).toBeInTheDocument();
   expect(screen.getByText(/Keeps watch so you/)).toBeInTheDocument();
@@ -82,9 +92,10 @@ it("opens on a brand panel: the mark, the name and the watch tagline", () => {
   expect(container.querySelector(".watch-rings")).not.toBeNull();
 });
 
-it("starts empty rather than pre-filling the seeded account", () => {
+it("starts empty rather than pre-filling the seeded account", async () => {
   stubLogin(() => undefined);
   renderPage(<LoginPage />);
+  await act(async () => {});
 
   expect(screen.getByLabelText("Email")).toHaveValue("");
   expect(screen.getByLabelText("Password")).toHaveValue("");
@@ -185,9 +196,10 @@ it("turns a 422 body into the sentence the API wrote", async () => {
   );
 });
 
-it("reveals the password only when asked", () => {
+it("reveals the password only when asked", async () => {
   stubLogin(() => undefined);
   renderPage(<LoginPage />);
+  await act(async () => {});
 
   const password = screen.getByLabelText("Password");
   expect(password).toHaveAttribute("type", "password");
@@ -207,18 +219,20 @@ it("reveals the password only when asked", () => {
   expect(password).toHaveValue("correct-horse");
 });
 
-it("points a developer at the seeded administrator without signing them in", () => {
+it("points a developer at the seeded administrator without signing them in", async () => {
   stubLogin(() => undefined);
   renderPage(<LoginPage />);
+  await act(async () => {});
 
   expect(screen.getByText("ADMIN_EMAIL")).toBeInTheDocument();
   expect(screen.getByText("ADMIN_PASSWORD")).toBeInTheDocument();
 });
 
-it("renders for production without the deployment's own instructions", () => {
+it("renders for production without the deployment's own instructions", async () => {
   vi.stubEnv("NODE_ENV", "production");
   stubLogin(() => undefined);
   renderPage(<LoginPage />);
+  await act(async () => {});
 
   // The hint is the only place either variable is named, so its absence is the assertion.
   expect(screen.queryByText("ADMIN_EMAIL")).not.toBeInTheDocument();
@@ -228,6 +242,43 @@ it("renders for production without the deployment's own instructions", () => {
   expect(screen.getByRole("heading", { level: 2, name: "Sign in" })).toBeInTheDocument();
   expect(screen.getByLabelText("Email")).toBeInTheDocument();
   expect(signIn()).toBeEnabled();
+});
+
+it("offers no demo button when the deployment has no shared login", async () => {
+  const calls = stubLogin(() => undefined);
+  renderPage(<LoginPage />);
+
+  // Wait for the answer itself, not for the assertion that depends on it: SWR settling is a
+  // state update, and asserting while it is still in flight would decide this test by timing.
+  await waitFor(() => expect(calls.some((call) => call.url.includes("/auth/demo"))).toBe(true));
+  await act(async () => {});
+
+  expect(screen.queryByRole("button", { name: /try the demo/i })).toBeNull();
+  // The form is still the whole front door.
+  expect(signIn()).toBeEnabled();
+});
+
+it("offers the shared login, and fills the form with it when asked", async () => {
+  stubLogin((url) =>
+    url.includes("/auth/demo")
+      ? jsonResponse({
+          enabled: true,
+          email: "demo@excubitor.local",
+          password: "published-on-purpose",
+        })
+      : undefined
+  );
+  renderPage(<LoginPage />);
+
+  const tryDemo = await screen.findByRole("button", { name: /try the demo/i });
+  // Prefilling is all it does: nothing is sent until the visitor presses Sign in themselves.
+  expect(screen.getByLabelText("Email")).toHaveValue("");
+
+  fireEvent.click(tryDemo);
+
+  expect(screen.getByLabelText("Email")).toHaveValue("demo@excubitor.local");
+  expect(screen.getByLabelText("Password")).toHaveValue("published-on-purpose");
+  expect(push).not.toHaveBeenCalled();
 });
 
 it("answers the build-mode question the way Next substitutes it", () => {

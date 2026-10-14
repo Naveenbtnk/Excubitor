@@ -1,17 +1,22 @@
 from fastapi import APIRouter, Depends, Request
 from sse_starlette.sse import EventSourceResponse
 
-from app.api.deps import require_role
+from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.errors import public_internal_error
 from app.core.observability import request_id_of
-from app.core.rbac import Role
 from app.models import User
 from app.schemas.sandbox import ChatRequest, ChatResponse
 from app.services.llm import get_llm
 from app.services.llm.base import LLMError, Message
 from app.services.llm.errors import public_llm_error
-from app.services.ratelimit import rate_limit
+from app.services.ratelimit import demo_guard, rate_limit
+
+# Asking the model a question is reading the corpus the deployment already holds, so every role
+# may do it: the sandbox is where a Viewer finds out what the tool is for. What it spends is the
+# provider budget rather than the database, and that is bounded twice over -- the project-wide
+# quota in ``app.services.llm.quota``, and ``demo_guard`` on the shared demo login, so one
+# visitor cannot empty the day's allowance on everybody's behalf.
 
 router = APIRouter(prefix="/sandbox", tags=["sandbox"])
 
@@ -23,8 +28,9 @@ SYSTEM_PROMPT = (
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     payload: ChatRequest,
-    _: User = Depends(require_role(Role.OPERATOR)),
+    _: User = Depends(get_current_user),
     _limit: None = Depends(rate_limit("sandbox.chat", "llm_rate_limit")),
+    _demo: None = Depends(demo_guard("ai")),
 ):
     reply = await get_llm().chat(
         [Message(role="user", content=payload.message)], system=SYSTEM_PROMPT
@@ -37,8 +43,9 @@ async def chat(
 async def stream(
     payload: ChatRequest,
     request: Request,
-    _: User = Depends(require_role(Role.OPERATOR)),
+    _: User = Depends(get_current_user),
     _limit: None = Depends(rate_limit("sandbox.stream", "llm_rate_limit")),
+    _demo: None = Depends(demo_guard("ai")),
 ):
     request_id = request_id_of(request.scope)
 

@@ -34,6 +34,21 @@ class Settings(BaseSettings):
     admin_email: str = "admin@cloudops.local"
     admin_password: str = "ChangeMe123!"
 
+    # A shared, read-only login a stranger may use: the "try the demo" account. Off unless a
+    # deployment asks for it *and* supplies the password, because this credential is published
+    # (see ``GET /auth/demo``) rather than shipped in the dashboard bundle -- the server keeps one
+    # copy, and a deployment that never enables the feature has no copy anywhere. Set
+    # DEMO_ACCOUNT_PASSWORD to a value used nowhere else; it is public by construction.
+    demo_account_enabled: bool = False
+    demo_account_email: str = "demo@excubitor.local"
+    demo_account_name: str = "Demo Visitor"
+    demo_account_password: str = ""
+    # AI calls the shared demo login may spend per ``llm_quota_window_seconds``. The per-minute
+    # per-user limit bounds a burst but not a day: the demo account is one user, so without this
+    # a single visitor could spend the project's whole provider budget (``LLM_QUOTA_LIMIT``)
+    # before the next visitor arrived. ``0`` leaves the shared login on the ordinary limits.
+    demo_account_rate_limit: int = 5
+
     # Shared secret for the Alertmanager webhook, which has no user behind it. Empty means the
     # route answers 503 rather than accepting anything: an unconfigured deployment must not be
     # an open write route.
@@ -138,6 +153,17 @@ class Settings(BaseSettings):
         if self.llm_quota_limit is not None:
             return self.llm_quota_limit
         return 0 if self.llm_provider == "ollama" else 20
+
+    @computed_field
+    @property
+    def demo_login_available(self) -> bool:
+        """Whether the demo login may be used at all: asked for, and given a password.
+
+        Both halves are required. Enabled without a password would provision an account nobody
+        can sign into, and a password with the feature off would leave a published credential
+        that the deployment believes is switched off.
+        """
+        return self.demo_account_enabled and bool(self.demo_account_password)
 
     @computed_field
     @property

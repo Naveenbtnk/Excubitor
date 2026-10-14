@@ -11,7 +11,7 @@ from app.schemas.knowledge import KnowledgeAnswer, KnowledgeQuery, RunbookCreate
 from app.services.llm import get_llm
 from app.services.llm.base import Message
 from app.services.rag import add_runbook, search_runbooks
-from app.services.ratelimit import rate_limit
+from app.services.ratelimit import demo_guard, rate_limit
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
@@ -69,6 +69,9 @@ async def query_knowledge(
     session: AsyncSession = Depends(get_session),
     _: User = Depends(get_current_user),
     _limit: None = Depends(rate_limit("knowledge.query", "llm_rate_limit")),
+    # The same allowance the sandbox draws on: one visitor on the shared login gets one bucket
+    # for the AI features, not one per route.
+    _demo: None = Depends(demo_guard("ai")),
 ):
     hits = await search_runbooks(session, payload.question)
     context = "\n\n".join(f"[{hit.title}]\n{hit.content}" for hit in hits) or "No runbooks indexed."
