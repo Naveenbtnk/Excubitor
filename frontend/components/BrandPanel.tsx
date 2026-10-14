@@ -57,7 +57,9 @@ export function BrandPanel() {
         </ul>
       </div>
 
-      <p className="relative text-xs text-brand-cream/45">
+      {/* Cream at 70% over the panel's near-black lands around 8:1, which clears AA for text
+          this size; the 45% this used to carry measured about 4:1 and read as a smudge. */}
+      <p className="relative text-xs text-brand-cream/70">
         Alert triage, incident timelines and post-mortems for teams on call.
       </p>
     </section>

@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import LoginPage from "./page";
+import { isDevBuild } from "@/lib/env";
 import { jsonResponse, renderPage } from "@/test/support";
 
 /**
@@ -8,6 +9,10 @@ import { jsonResponse, renderPage } from "@/test/support";
  * cookie is created, so these tests cover both halves of it: that the front door looks like a
  * product (brand panel, revealed password, an alert when it goes wrong) and that the request it
  * sends is still exactly the one it used to send -- same endpoint, same cookie, same `next`.
+ *
+ * The seeded-administrator hint is the one thing here that depends on which kind of build is
+ * running, so it is tested in both states: the variables are named while developing, and a
+ * production build renders the page without them.
  */
 
 const push = vi.fn();
@@ -59,6 +64,7 @@ const accepted = (url: string) => (url.includes("/auth/login") ? jsonResponse({ 
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   push.mockClear();
   refresh.mockClear();
   search = "";
@@ -207,4 +213,26 @@ it("points a developer at the seeded administrator without signing them in", () 
 
   expect(screen.getByText("ADMIN_EMAIL")).toBeInTheDocument();
   expect(screen.getByText("ADMIN_PASSWORD")).toBeInTheDocument();
+});
+
+it("renders for production without the deployment's own instructions", () => {
+  vi.stubEnv("NODE_ENV", "production");
+  stubLogin(() => undefined);
+  renderPage(<LoginPage />);
+
+  // The hint is the only place either variable is named, so its absence is the assertion.
+  expect(screen.queryByText("ADMIN_EMAIL")).not.toBeInTheDocument();
+  expect(screen.queryByText("ADMIN_PASSWORD")).not.toBeInTheDocument();
+  expect(document.body.textContent).not.toContain("seeded administrator");
+  // Everything a stranger needs is still there.
+  expect(screen.getByRole("heading", { level: 2, name: "Sign in" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Email")).toBeInTheDocument();
+  expect(signIn()).toBeEnabled();
+});
+
+it("answers the build-mode question the way Next substitutes it", () => {
+  expect(isDevBuild("development")).toBe(true);
+  expect(isDevBuild("test")).toBe(true);
+  expect(isDevBuild(undefined)).toBe(true);
+  expect(isDevBuild("production")).toBe(false);
 });

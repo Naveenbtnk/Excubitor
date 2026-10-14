@@ -6,6 +6,7 @@ import { FormEvent, Suspense, useState } from "react";
 import { BrandPanel } from "@/components/BrandPanel";
 import { Logo } from "@/components/Logo";
 import { api } from "@/lib/api";
+import { isDevBuild } from "@/lib/env";
 
 /**
  * The sign-in form. Nothing about the exchange changed when the page was rebuilt -- same POST to
@@ -131,10 +132,10 @@ export default function LoginPage() {
   return (
     /* The root layout centres the console in a padded container; the sign-in page cancels those
        paddings with the same negative margins the nav uses, so the brand panel runs to the edges. */
-    <main className="-mx-3 -mb-10 min-h-screen sm:-mx-5 sm:-mb-16 lg:-mx-8 lg:grid lg:grid-cols-[1.05fr_1fr] xl:grid-cols-[1.15fr_1fr]">
+    <main className="-mx-3 -mb-10 min-h-dvh sm:-mx-5 sm:-mb-16 lg:-mx-8 lg:grid lg:grid-cols-[1.05fr_1fr] xl:grid-cols-[1.15fr_1fr]">
       <BrandPanel />
 
-      <div className="flex min-h-screen flex-col justify-center px-4 py-12 sm:px-8 lg:px-12">
+      <div className="flex min-h-dvh flex-col justify-center px-4 py-12 sm:px-8 lg:px-12">
         {/* Below `lg` the panel above is hidden, so the brand collapses to a header. */}
         <div className="mb-8 flex items-center justify-center gap-3 lg:hidden">
           <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-neutral-900 text-brand-cream">
@@ -153,10 +154,17 @@ export default function LoginPage() {
             <LoginForm />
           </Suspense>
 
-          <p className="mt-5 text-center text-xs leading-5 text-neutral-500">
-            The seeded administrator signs in with the <code className="text-neutral-600">ADMIN_EMAIL</code>{" "}
-            and <code className="text-neutral-600">ADMIN_PASSWORD</code> configured for the backend.
-          </p>
+          {/* A development affordance, and nothing more: it names two environment variables, so
+              on a deployed instance it is a hint for whoever is already poking at the box rather
+              than something to put in front of a stranger. `isDevBuild` is decided at build time,
+              so a production bundle cannot render this whatever the environment says later. */}
+          {isDevBuild() && (
+            <p className="mt-5 text-center text-xs leading-5 text-neutral-500">
+              The seeded administrator signs in with the{" "}
+              <code className="text-neutral-600">ADMIN_EMAIL</code> and{" "}
+              <code className="text-neutral-600">ADMIN_PASSWORD</code> configured for the backend.
+            </p>
+          )}
         </div>
       </div>
     </main>
