@@ -12,7 +12,7 @@
     <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
     <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license">
   </p>
-  <p><strong>Live demo:</strong> <em>none hosted — two commands to your own.</em> <code>cp backend/.env.example backend/.env</code>, then <code>docker compose up --build -d</code>. Nothing but the Gemini key is required, and <code>DEMO_ACCOUNT_ENABLED=true</code> publishes a read-only login your visitors can use. Every screenshot below came from exactly that stack.</p>
+  <p><strong>Live demo:</strong> <em>none hosted — two commands to your own.</em> <code>cp backend/.env.example backend/.env</code>, then <code>docker compose up --build -d</code>. Nothing but the Gemini key is required, and <code>DEMO_ACCOUNT_ENABLED=true</code> publishes a read-only login your visitors can use. Every screenshot below, and the <a href="docs/excubitor-demo.mp4">46-second walkthrough video</a> with them, came from exactly that stack.</p>
 </div>
 
 ---
@@ -77,6 +77,11 @@ and `gemini-embedding-001`) · JWT authentication in an httpOnly cookie · Docke
 full local production stack.
 
 ## Feature gallery
+
+**[Walkthrough video — 46 seconds](docs/excubitor-demo.mp4)** (1440×900, 0.7 MB). The whole
+cycle against the running stack, with no cuts: sign in, read the day at a glance, watch the sandbox
+answer stream in and stop it with the partial answer kept, then open a post-mortem in review and
+download its markdown. The stills below are the same session, one screen at a time.
 
 | | |
 | --- | --- |
@@ -262,9 +267,9 @@ point anyone else at the deployment.
 
 ## Credits
 
-Every screenshot in this README was captured from the local Docker Compose stack at 1440×900
-(desktop) and 390×844 (mobile), signed in as the seeded administrator against the seeded demo data.
-No credentials, tokens or provider payloads appear in any of them. The mark
+Every screenshot in this README, and the walkthrough video, was captured from the local Docker
+Compose stack at 1440×900 (desktop) and 390×844 (mobile), signed in as the seeded administrator
+against the seeded demo data. No credentials, tokens or provider payloads appear in any of them. The mark
 is hand-drawn SVG, and the rest of the visual system is Tailwind CSS 4 with the two brand colours
 defined in `frontend/app/globals.css`.
 
