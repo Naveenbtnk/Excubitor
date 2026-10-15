@@ -121,6 +121,7 @@ async def test_the_demo_login_is_a_viewer_and_may_read(client: AsyncClient, monk
         ("POST", "/alerts/1/ack", {}),
         ("POST", "/incidents/triage/1", {}),
         ("GET", "/users", {}),
+        ("DELETE", "/users/1", {}),
     ],
 )
 async def test_the_demo_login_cannot_write(

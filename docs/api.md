@@ -8,6 +8,7 @@ needs the session cookie, and every write route declares a minimum role.
 - [Pagination](#pagination)
 - [Incident timeline](#incident-timeline)
 - [Post-mortems](#post-mortems)
+- [User management](#user-management)
 - [Alert ingestion](#alert-ingestion)
 
 ## Pagination
@@ -142,6 +143,41 @@ from a document that never had one, and the whole point of a post-mortem is that
 visible. Action items render as a table, with a due date in the past marked `(overdue)` at render
 time and pipes or newlines in a cell flattened so a stray character cannot break the row. The
 response is `text/markdown`, served as an attachment.
+
+## User management
+
+People are rows, and a role is read from one on every request, which makes the routes that change
+an account the most consequential in the API. All of them require an administrator.
+
+| Route | Role | What it does |
+| --- | --- | --- |
+| `GET /users` | admin | The roster, with the pagination envelope |
+| `POST /users` | admin | Creates an account; `role` defaults to `viewer` |
+| `PATCH /users/{id}` | admin | Changes `name`, `role` and/or `password` |
+| `DELETE /users/{id}` | admin | Removes the account |
+
+**A deployment is never left without an administrator.** Demoting the last administrator answers
+`400` — "promote someone else before changing this role" — and deleting it answers `400` with the
+same rule: nobody left who could promote the next one is a locked door, not a cleanup. Deleting
+your *own* account is refused separately, even when other administrators remain, because the row is
+the account the request is signed in as. The two guards overlap in exactly one case (the only
+administrator deleting themselves), and there the last-administrator answer is the one that names
+the loss and the way out.
+
+**The demotion or deletion is felt on the next request, not the next login.** Earlier sections of
+this document rely on the same mechanism: the session is a cookie, and the row behind it is read
+per request. Deleting an account is that taken to its end — the cookie still resolves, the row does
+not, and the next request answers `401`.
+
+```bash
+curl -b cookies.txt http://localhost:8010/users | jq '.items[] | {id, email, role}'
+curl -b cookies.txt -i -X DELETE http://localhost:8010/users/4
+```
+
+**A deleted account takes nothing with it.** Post-mortems and action items reference a user with
+`ON DELETE SET NULL`, and the timeline records an actor's email as text, so a departed colleague's
+documents stay readable and keep their owner as written: the history of an incident belongs to the
+deployment, not to whoever still has a row.
 
 ## Alert ingestion
 

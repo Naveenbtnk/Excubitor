@@ -66,7 +66,9 @@ build and run healthy.
   - the document's own collection (see §15): `GET /post-mortems`, `GET /post-mortems/{id}`,
     `PATCH /post-mortems/{id}`, `PATCH /post-mortems/{id}/actions/{id}`,
     `GET /post-mortems/{id}/export.md`.
-  - admin only: `GET /users`, `POST /users`, `PATCH /users/{id}`.
+  - admin only: `GET /users`, `POST /users`, `PATCH /users/{id}`, `DELETE /users/{id}`.
+    Deletion refuses the caller's own account and the last administrator; scripts/
+    verify_live_stack.py (see docs/development.md) exercises both live.
 - **Verified**: `ruff check app tests` passes clean. `pytest` passes (4 tests: password
   hashing/JWT round-trip, RAG chunking). `docker build` succeeds. Container boots, runs Alembic
   migration, seeds admin, passes its healthcheck.

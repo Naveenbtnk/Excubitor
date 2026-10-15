@@ -108,3 +108,37 @@ async def update_user(
     await session.commit()
     await session.refresh(user)
     return user
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: int,
+    session: AsyncSession = Depends(get_session),
+    caller: User = Depends(ADMIN_ONLY),
+):
+    user = await session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Two guards, and the order is the message. The last administrator is also the caller --
+    # whoever asks has to be an administrator, so if only one exists the two rows are the same
+    # one -- and that check runs first because it names what would actually be lost and the way
+    # out. The self check then answers the remaining case, an administrator with colleagues.
+    if user.role == Role.ADMIN.value and await _admin_count(session) <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "This is the last administrator; promote someone else before "
+                "deleting this account."
+            ),
+        )
+    if user.id == caller.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own account; ask another administrator.",
+        )
+
+    # The rows an account leaves behind keep their text: post-mortems and follow-ups reference
+    # the user with ON DELETE SET NULL, so a departed colleague's document stays readable.
+    await session.delete(user)
+    await session.commit()

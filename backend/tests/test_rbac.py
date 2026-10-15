@@ -23,6 +23,7 @@ from tests.conftest import TEST_USER_PASSWORD
 
 VIEWER = "viewer@cloudops.local"
 OPERATOR = "operator@cloudops.local"
+OTHER_ADMIN = "second-admin@cloudops.local"
 
 ALERT_BODY = {
     "source": "prometheus",
@@ -219,6 +220,7 @@ async def test_a_write_without_a_session_is_401_not_403(client: AsyncClient):
         ("GET", "/users", {}),
         ("POST", "/users", {"json": {"email": "new@cloudops.local", "password": "password123"}}),
         ("PATCH", "/users/1", {"json": {"role": "admin"}}),
+        ("DELETE", "/users/1", {}),
     ],
 )
 async def test_user_management_is_admin_only(
@@ -340,6 +342,64 @@ async def test_the_last_administrator_cannot_be_demoted(authed_client: AsyncClie
 
     assert refused.status_code == 400, refused.text
     assert "last administrator" in refused.json()["detail"]
+
+
+async def test_the_last_administrator_cannot_be_deleted(authed_client: AsyncClient):
+    """Deleting the only administrator is also deleting yourself, and the answer names the loss."""
+    me = await authed_client.get("/auth/me")
+    admin_id = me.json()["id"]
+
+    refused = await authed_client.delete(f"/users/{admin_id}")
+
+    assert refused.status_code == 400, refused.text
+    assert "last administrator" in refused.json()["detail"]
+    # And the account is still there to sign in with.
+    assert (await authed_client.get("/auth/me")).status_code == 200
+
+
+async def test_an_administrator_cannot_delete_their_own_account(
+    authed_client: AsyncClient, make_user
+):
+    """With a second administrator standing beside them, the refusal switches to the self guard."""
+    await make_user(OTHER_ADMIN, Role.ADMIN.value)
+    me = await authed_client.get("/auth/me")
+
+    refused = await authed_client.delete(f"/users/{me.json()['id']}")
+
+    assert refused.status_code == 400, refused.text
+    assert "your own account" in refused.json()["detail"]
+
+
+async def test_deleting_an_account_removes_it_and_revokes_its_session(
+    authed_client: AsyncClient, make_user
+):
+    await make_user(VIEWER, Role.VIEWER.value)
+    listing = await authed_client.get("/users")
+    viewer_id = next(user["id"] for user in listing.json()["items"] if user["email"] == VIEWER)
+
+    # A session of its own: what matters is what the deleted account's cookie is worth afterwards.
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as viewer:
+        signed_in = await viewer.post(
+            "/auth/login", json={"email": VIEWER, "password": TEST_USER_PASSWORD}
+        )
+        assert signed_in.status_code == 200, signed_in.text
+        assert (await viewer.get("/auth/me")).status_code == 200
+
+        deleted = await authed_client.delete(f"/users/{viewer_id}")
+        assert deleted.status_code == 204, deleted.text
+
+        # The cookie still resolves; the row it named does not, so the session is over.
+        assert (await viewer.get("/auth/me")).status_code == 401
+
+    remaining = await authed_client.get("/users")
+    assert VIEWER not in [user["email"] for user in remaining.json()["items"]]
+
+
+async def test_deleting_an_account_that_does_not_exist_is_404(authed_client: AsyncClient):
+    response = await authed_client.delete("/users/999999")
+
+    assert response.status_code == 404, response.text
 
 
 async def test_an_admin_can_change_a_name_and_a_password(

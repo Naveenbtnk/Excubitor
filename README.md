@@ -198,9 +198,10 @@ point anyone else at the deployment.
    (*"This is the last administrator; promote someone else before changing this role."*) — that guard
    is why step 2 comes first, and it is the difference between a demotion and locking every human out
    of your own deployment.
-4. **Get rid of the seeded account.** There is no user-delete route yet, so the safe resting state is
-   the **Viewer** role from step 3: it can read what any viewer can read and write nothing. To remove
-   the row outright, delete it in PostgreSQL:
+4. **Delete the seeded account.** `DELETE /users/{id}` is administrator-only, and it refuses both the
+   caller's own account and the last administrator — with step 3 done, the seeded row can go without
+   leaving a deployment nobody can administer ([docs/api.md](docs/api.md) has the call). The Users
+   page does not expose a delete control yet; if you would rather work in PostgreSQL:
 
    ```bash
    docker compose exec db psql -U cloudops -d cloudops_ai \

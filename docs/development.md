@@ -66,6 +66,23 @@ Redis, because that is the only thing that can prove it. They look for one at `T
 reporting a pass they did not earn. `docker compose up -d redis` provides one; CI runs a service
 container so the shared-ceiling guarantee is exercised on every push.
 
+### Verifying a running stack
+
+The suite above imports the app; the paths that only exist once a deployment is built -- the
+environment seeding the first administrator, the shared demo login published at `GET /auth/demo`,
+and the role guards as they behave through a real session cookie -- are checked by one script that
+talks to the compose stack over HTTP:
+
+```bash
+python scripts/verify_live_stack.py
+```
+
+It reads `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `backend/.env`, calls no provider route (so it
+spends nothing), and leaves the stack as it found it: a throwaway administrator is created,
+exercised through the demotion and deletion guards, and deleted again. The demo half skips with a
+reason unless `DEMO_ACCOUNT_ENABLED=true` and `DEMO_ACCOUNT_PASSWORD` are set. Point it at another
+origin with `EXCUBITOR_BASE_URL`.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push and pull request, with a `pgvector/pgvector:pg16`
