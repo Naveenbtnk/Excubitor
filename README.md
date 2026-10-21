@@ -7,8 +7,8 @@
   <p><strong>AI night-watch for your infrastructure — from raw alert to published post-mortem, in one console.</strong></p>
   <p>
     <a href="https://github.com/your-org/excubitor/actions/workflows/ci.yml"><img src="https://github.com/your-org/excubitor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-    <img src="https://img.shields.io/badge/backend_tests-307_passed-brightgreen" alt="307 backend tests passing">
-    <img src="https://img.shields.io/badge/frontend_tests-83_passed-brightgreen" alt="83 frontend tests passing">
+    <img src="https://img.shields.io/badge/backend_tests-325_passed-brightgreen" alt="325 backend tests passing">
+    <img src="https://img.shields.io/badge/frontend_tests-103_passed-brightgreen" alt="103 frontend tests passing">
     <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
     <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license">
   </p>
@@ -85,7 +85,7 @@ download its markdown. The stills below are the same session, one screen at a ti
 
 | | |
 | --- | --- |
-| ![Sign in](docs/screenshots/login.png)<br>**A front door, and no way around it** — one sign-in route and no self-service registration; the first administrator comes from environment variables. | ![Overview](docs/screenshots/overview.png)<br>**The day at a glance** — alert queue, provider budget and outstanding post-mortem follow-ups on one screen, with open and overdue counted across every document you may read. |
+| ![Sign in](docs/screenshots/login.png)<br>**A front door, and no way around it** — one sign-in route and no self-service registration; the first administrator comes from environment variables. | ![Overview](docs/screenshots/overview.png)<br>**The day at a glance** — alert queue, the model in use and outstanding post-mortem follow-ups on one screen, with open and overdue counted across every document you may read. |
 | ![Alerts with AI triage](docs/screenshots/alerts-triage.png)<br>**Triage with evidence** — one click turns an alert into an incident with a root cause, a recommendation and a confidence score, retrieved from your own runbooks. | ![Incident timeline](docs/screenshots/incident-timeline.png)<br>**An incident with a memory** — status changes, reassignments and comments are append-only entries naming who and when; a change that changes nothing writes nothing. |
 | ![Sandbox mid-stream](docs/screenshots/sandbox-stream.png)<br>**Answers as they are written** — tokens stream over SSE, **Stop** keeps the partial answer, and a spent budget arrives as a sentence with a real countdown instead of the provider's payload. | ![Knowledge](docs/screenshots/knowledge.png)<br>**Your runbooks, retrieved** — pages are chunked, embedded and matched by vector similarity, which is what lets triage cite your operations docs. |
 | ![Post-mortem review](docs/screenshots/post-mortem-review.png)<br>**A document a team signs off** — Draft → in review → published, one transition at a time from controls carried on the document itself; the generated narrative sits beside the structured sections a reviewer works through, with the open follow-up count in the header. | ![Post-mortem queue](docs/screenshots/post-mortems-queue.png)<br>**A review queue, not a blob store** — most recently touched first, each row carrying its status and open follow-up count, and the export is a markdown file whose empty sections read `_Not recorded._`. |
@@ -111,8 +111,8 @@ The decisions a reviewer would otherwise have to reverse-engineer, and the reaso
 
 | | |
 | --- | --- |
-| **Backend** | **307 tests**, `pytest -q` in ~87 s — unit tests plus integration tests against a real PostgreSQL 16 + pgvector and a real Redis. |
-| **Frontend** | **83 tests** across 13 files (`vitest run`), plus `tsc --noEmit` and a production `next build`. |
+| **Backend** | **325 tests**, `pytest -q` in ~1 m 45 s — unit tests plus integration tests against a real PostgreSQL 16 + pgvector and a real Redis. |
+| **Frontend** | **103 tests** across 14 files (`vitest run`), plus `tsc --noEmit` and a production `next build`. |
 | **CI** | One workflow, three jobs. Five checks block a commit from a green build: `ruff`, `pytest`, `tsc`, `vitest`, and `npm audit --omit=dev --audit-level=high`; the Docker images build only after all of them pass. |
 
 ```bash
