@@ -13,6 +13,14 @@ class Settings(BaseSettings):
     # callers, so the startup guard refuses to start with it on.
     debug: bool = False
 
+    # FastAPI's own /docs, /redoc and /openapi.json. A development aid: the schema maps every
+    # route, parameter and response shape, which is useful at a desk and is a free reconnaissance
+    # pass for anyone else. Left unset it follows the environment -- on outside production, off
+    # inside it -- so a local run keeps the UI it expects and a deployment serves only the API and
+    # the dashboard. Set it true to publish the schema deliberately, false to keep it off
+    # anywhere.
+    expose_api_docs: bool | None = None
+
     database_url: str = "postgresql+asyncpg://cloudops:cloudops@localhost:5434/cloudops_ai"
 
     llm_provider: str = "gemini"
@@ -174,6 +182,19 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment.lower() == "production"
+
+    @computed_field
+    @property
+    def should_expose_api_docs(self) -> bool:
+        """Whether FastAPI mounts its schema, following the environment unless told otherwise.
+
+        An explicit ``EXPOSE_API_DOCS`` always wins, in both directions: publishing the schema
+        from production is a choice a deployment may make on purpose, and keeping it off in
+        development is how the tests prove the off path without pretending to be production.
+        """
+        if self.expose_api_docs is not None:
+            return self.expose_api_docs
+        return not self.is_production
 
 
 @lru_cache

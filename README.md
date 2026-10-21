@@ -234,6 +234,10 @@ point anyone else at the deployment.
 - **Three roles — `admin`, `operator`, `viewer` — are enforced by a FastAPI dependency on every
   route**, read from the user row on every request. A Viewer calling a write route directly gets
   `403`; the UI only hides the button.
+- **The API schema is a development aid.** `/docs`, `/redoc` and `/openapi.json` are served
+  outside production and off by default in production (`EXPOSE_API_DOCS`), so a deployment
+  describes itself through the dashboard instead of handing a stranger a map of every route,
+  parameter and response shape.
 - **A production deployment is checked before it serves anything.** A missing secret stops the
   process at startup rather than silently defaulting to a value published in this repository; a
   weak one is logged by name, never by value.

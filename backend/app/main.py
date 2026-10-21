@@ -16,7 +16,7 @@ from app.api.routes import (
     users,
     webhooks,
 )
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.core.counter_store import close_counter_stores
 from app.core.errors import InternalErrorMiddleware
 from app.core.observability import RequestContextMiddleware, configure_logging, request_id_of
@@ -41,15 +41,35 @@ async def lifespan(app: FastAPI):
     await close_db()
 
 
-def create_app() -> FastAPI:
-    configure_logging(settings.log_level)
+def api_docs_paths(config: Settings) -> dict[str, str | None]:
+    """Where FastAPI mounts its schema, or nowhere at all.
+
+    ``None`` for all three is how FastAPI is told not to mount them: the paths then answer 404
+    like any other route nobody wrote, instead of redirecting to a page that says the feature is
+    switched off. The decision lives here rather than at each call site so the routes and the
+    setting cannot drift apart.
+    """
+    if config.should_expose_api_docs:
+        return {"openapi_url": "/openapi.json", "docs_url": "/docs", "redoc_url": "/redoc"}
+    return {"openapi_url": None, "docs_url": None, "redoc_url": None}
+
+
+def create_app(config: Settings | None = None) -> FastAPI:
+    config = config or settings
+    configure_logging(config.log_level)
     # Before anything else is built: a production deployment missing a secret must fail here,
     # at startup, rather than serve requests it cannot sign or authenticate.
-    verify_startup_settings(settings)
-    app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan, debug=settings.debug)
+    verify_startup_settings(config)
+    app = FastAPI(
+        title=config.app_name,
+        version="1.0.0",
+        lifespan=lifespan,
+        debug=config.debug,
+        **api_docs_paths(config),
+    )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origin_list,
+        allow_origins=config.cors_origin_list,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -66,9 +86,9 @@ def create_app() -> FastAPI:
         # a later attempt can succeed. When the provider stated its own wait, that beats any
         # local guess: a quota can be a per-minute limit or a daily cap, hours apart.
         fallback = (
-            settings.llm_retry_max_delay
+            config.llm_retry_max_delay
             if exc.replayable
-            else settings.rate_limit_window_seconds
+            else config.rate_limit_window_seconds
         )
         retry_after = max(1, int(exc.retry_after if exc.retry_after is not None else fallback))
         # `detail` stays a plain readable sentence, which is what every existing client reads;
@@ -76,7 +96,7 @@ def create_app() -> FastAPI:
         # own wording. Neither contains a byte of the provider's own text -- that is logged.
         public = public_llm_error(
             exc,
-            provider=settings.llm_provider,
+            provider=config.llm_provider,
             request_id=request_id_of(request.scope),
             operation=request.url.path,
             retry_after=retry_after,
@@ -91,7 +111,7 @@ def create_app() -> FastAPI:
     async def llm_error_handler(request: Request, exc: LLMError):
         public = public_llm_error(
             exc,
-            provider=settings.llm_provider,
+            provider=config.llm_provider,
             request_id=request_id_of(request.scope),
             operation=request.url.path,
         )
