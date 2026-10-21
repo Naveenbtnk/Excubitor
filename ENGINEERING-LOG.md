@@ -4,8 +4,8 @@ Excubitor is an AIOps dashboard whose less obvious parts — provider retries, a
 budget, an append-only incident timeline, a post-mortem a team signs off — were each built
 against a failure that had been observed rather than imagined. This log records what exists,
 how it was verified, why the non-obvious choices were made, and what is deliberately still
-missing. It is written for a human picking the project up: a reviewer, a new maintainer, or the
-same developer six months later. It is a record of work done, not a plan for work to come.
+missing. It is written for a human picking the project up — a reviewer, a new maintainer, or the
+same developer six months later — and it is a record of work done, not a plan for work to come.
 
 ## 1. What the project is
 
