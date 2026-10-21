@@ -18,9 +18,6 @@ out/
 frontend/.env.local
 *.tsbuildinfo
 
-# Local tool state (workspace id, not project source)
-.freebuff/
-
 # IDE
 .vscode/
 .idea/

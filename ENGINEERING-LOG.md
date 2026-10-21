@@ -300,7 +300,7 @@ holding a worker and a rate-limit slot for that whole time.
   with an hours-long `Retry-After`.
 - **`.gitignore` audit**: `git check-ignore` confirmed `.env` and `.env.local` were covered and
   found five generated paths that were not (`*.egg-info/`, `.pytest_cache/`, `.ruff_cache/`,
-  `*.tsbuildinfo`, `.freebuff/`), all of which existed on disk. Every rule was re-checked
+  `*.tsbuildinfo`), all of which existed on disk. Every rule was re-checked
   against the files that must stay committable.
 
 ## 10. The provider budget
