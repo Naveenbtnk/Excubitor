@@ -223,7 +223,7 @@ point anyone else at the deployment.
 | [docs/reliability.md](docs/reliability.md) | Rate limits, the provider budget, the retry/timeout taxonomy, the SSE `no-transform` fix, error projection, observability. |
 | [docs/development.md](docs/development.md) | Local development, verification (including the Redis-dependent tests), CI jobs. |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | The path to production: secrets, the startup guard in full, HTTPS with Caddy and nginx (including the stream-safe and provider-safe read timeouts), Gunicorn sizing against your connection budget, private Redis, backups, upgrades, troubleshooting. |
-| [HANDOFF.md](HANDOFF.md) | Where the project stands, what was decided and why, and what is deliberately not built yet. |
+| [ENGINEERING-LOG.md](ENGINEERING-LOG.md) | What exists and how it was verified, the decisions behind the non-obvious parts, and what is deliberately still unbuilt. |
 
 ## Security model
 
