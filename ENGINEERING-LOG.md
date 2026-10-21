@@ -181,7 +181,9 @@ production.
 FastAPI. Every data route depends on `get_current_user` and a role, and the role is read from
 the user row on every request. New provider capabilities are added to `LLMProvider` first.
 Pydantic schemas sit at every API boundary. The backend is async throughout. Comments explain
-*why* a thing is the way it is, never *what* the next line does.
+*why* a thing is the way it is, never *what* the next line does. On the frontend, Tailwind v4
+reads its theme from `@theme` in `app/globals.css` and loads the typography plugin with
+`@plugin`; there is no `tailwind.config.ts`, and a new one would not be read.
 
 **Pitfalls that have already bitten this project once each.**
 
