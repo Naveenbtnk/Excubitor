@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderPage } from "@/test/support";
 import SandboxPage from "./page";
 
 /**
@@ -35,12 +36,13 @@ interface StreamControl {
 }
 
 /**
- * The page asks `/auth/me` for the caller's role, and an Operator is the role that can start a
- * generation. Every stub below answers that one request first -- a stream response to it would
- * leave the page role-less and its Send button disabled, which is a test's own bug, not the
- * app's behaviour.
+ * The page asks `/auth/me` for the caller's role and leaves Send disabled until it knows.
+ * Every stub below answers that one request first -- a stream response to it would leave the
+ * page role-less and its Send button disabled, which is a test's own bug, not the app's
+ * behaviour. The role answered here is the weakest one the API accepts, so the whole file runs
+ * as a Viewer -- the role a shared demo visitor holds, and the one the route lets ask.
  */
-function sessionResponse(role = "operator"): Response {
+function sessionResponse(role = "viewer"): Response {
   return new Response(
     JSON.stringify({ id: 2, email: "ops@cloudops.local", name: "Ops Person", role }),
     { status: 200, headers: { "content-type": "application/json" } }
@@ -296,5 +298,35 @@ describe("failures", () => {
     // The note prefixes the sentence with a warning glyph, so match on the sentence itself.
     expect(await screen.findByText(/Too many requests. Try again in 12 seconds/)).toBeInTheDocument();
     expect(screen.queryByLabelText("Copy diagnostic ID")).not.toBeInTheDocument();
+  });
+});
+
+describe("who may ask", () => {
+  it("lets a Viewer ask, because the route answers a Viewer", async () => {
+    // The API spreads the same rule over every signed-in role (``test_a_viewer_may_ask_the_sandbox``
+    // in the backend suite): asking spends provider budget, not state, and a role is the wrong
+    // place to bound it. A page that needs Operator denies the shared demo login its whole point.
+    const stream = stubStream();
+    render(<SandboxPage />);
+    await submit();
+
+    expect(screen.getByLabelText("Stop generating")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("Requires the operator role or higher.");
+
+    await push(stream, "event: message\ndata: Pool \n\n");
+    expect(await screen.findByText("Pool")).toBeInTheDocument();
+
+    await finish(stream);
+  });
+
+  it("holds Send until the session resolves, rather than guessing", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+    // A fresh SWR cache, or the previous test's session answers this page instantly and there
+    // is no unresolved state left to observe.
+    renderPage(<SandboxPage />);
+
+    const send = screen.getByLabelText("Send message");
+    expect(send).toBeDisabled();
+    expect(send).toHaveAttribute("title", "Checking your session…");
   });
 });

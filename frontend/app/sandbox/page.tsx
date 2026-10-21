@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ApiError, type PublicError } from "@/lib/api";
-import { needsRole, useSession } from "@/lib/session";
+import { useSession } from "@/lib/session";
 import { streamChat } from "@/lib/stream";
 
 interface Msg {
@@ -64,10 +64,14 @@ function DiagnosticId({ id }: { id: string }) {
 }
 
 export default function SandboxPage() {
-  const { can } = useSession();
-  // Generating a response spends provider quota, which is an Operator action. A Viewer can
-  // still read this page -- there is simply nothing for them to start.
-  const mayOperate = can("operator");
+  const { user } = useSession();
+  // Generating a response spends provider budget, not state, and this route reads the corpus
+  // the deployment already holds -- so every signed-in role may ask, exactly as
+  // ``POST /sandbox/chat`` and ``/sandbox/stream`` allow (see ``test_a_viewer_may_ask_the_sandbox``).
+  // What bounds the spending is the project-wide provider quota and, on a shared demo login,
+  // ``demo_guard``; a role would bound it in the wrong place. The control waits for the session
+  // to resolve and is enabled for anyone the API would answer.
+  const mayAsk = Boolean(user);
   const [history, setHistory] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -211,8 +215,8 @@ export default function SandboxPage() {
         ) : (
           <button
             onClick={send}
-            disabled={!mayOperate}
-            title={mayOperate ? undefined : needsRole("operator")}
+            disabled={!mayAsk}
+            title={mayAsk ? undefined : "Checking your session…"}
             className="btn-primary size-10 shrink-0 px-0 sm:w-auto sm:px-4"
             aria-label="Send message"
           >
@@ -225,7 +229,6 @@ export default function SandboxPage() {
       {streaming && (
         <p className="mt-2 text-xs text-neutral-500">Streaming from the provider. Stop keeps the partial answer.</p>
       )}
-      {!mayOperate && <p className="mt-2 text-xs text-neutral-500">{needsRole("operator")}</p>}
     </div>
   );
 }
