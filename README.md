@@ -6,7 +6,7 @@
   <h1>Excubitor</h1>
   <p><strong>AI night-watch for your infrastructure — from raw alert to published post-mortem, in one console.</strong></p>
   <p>
-    <a href="https://github.com/your-org/excubitor/actions/workflows/ci.yml"><img src="https://github.com/your-org/excubitor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <a href="https://github.com/Naveenbtnk/Excubitor/actions/workflows/ci.yml"><img src="https://github.com/Naveenbtnk/Excubitor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <img src="https://img.shields.io/badge/backend_tests-325_passed-brightgreen" alt="325 backend tests passing">
     <img src="https://img.shields.io/badge/frontend_tests-103_passed-brightgreen" alt="103 frontend tests passing">
     <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
@@ -90,7 +90,7 @@ download its markdown. The stills below are the same session, one screen at a ti
 | ![Sandbox mid-stream](docs/screenshots/sandbox-stream.png)<br>**Answers as they are written** — tokens stream over SSE, **Stop** keeps the partial answer, and a spent budget arrives as a sentence with a real countdown instead of the provider's payload. | ![Knowledge](docs/screenshots/knowledge.png)<br>**Your runbooks, retrieved** — pages are chunked, embedded and matched by vector similarity, which is what lets triage cite your operations docs. |
 | ![Post-mortem review](docs/screenshots/post-mortem-review.png)<br>**A document a team signs off** — Draft → in review → published, one transition at a time from controls carried on the document itself; the generated narrative sits beside the structured sections a reviewer works through, with the open follow-up count in the header. | ![Post-mortem queue](docs/screenshots/post-mortems-queue.png)<br>**A review queue, not a blob store** — most recently touched first, each row carrying its status and open follow-up count, and the export is a markdown file whose empty sections read `_Not recorded._`. |
 | ![Admin users](docs/screenshots/admin-users.png)<br>**Roles are rows** — admin, operator and viewer are enforced per route and read on every request, so a demotion lands immediately and a hidden button is only a courtesy. | ![Overview on mobile](docs/screenshots/mobile-overview.png)<br>**The queue in your pocket** — the console is usable down to 390 px, for the 3 a.m. check. |
-| ![Post-mortem on mobile](docs/screenshots/mobile-post-mortem.png)<br>**The document on a phone** — reading and reviewing do not require a desk. | <br><br><a href="docs/excubitor-demo.mp4"><h2>▶</h2></a>**[Watch the 46-second walkthrough](docs/excubitor-demo.mp4)** — same stack, no cuts: sign in, stream and stop an answer, review and export a post-mortem.<br><br> |
+| ![Post-mortem on mobile](docs/screenshots/mobile-post-mortem.png)<br>**The document on a phone** — reading and reviewing do not require a desk. | <a href="docs/excubitor-demo.mp4"><img src="docs/brand/demo-card.svg" alt="Play the 46-second walkthrough video"></a><br>**[The whole cycle, in 46 seconds](docs/excubitor-demo.mp4)** — the same stack as every still above, with no cuts. |
 
 ## Why these choices
 

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 844" width="390" height="844" role="img" aria-label="Play the 46-second Excubitor walkthrough video">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b1410"/>
+      <stop offset="1" stop-color="#0d1117"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ff8a3d" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ff8a3d" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="390" height="844" rx="24" fill="url(#bg)"/>
+  <rect x="0.5" y="0.5" width="389" height="843" rx="23.5" fill="none" stroke="#30363d"/>
+
+  <circle cx="195" cy="330" r="150" fill="url(#glow)"/>
+  <circle cx="195" cy="330" r="62" fill="#ff8a3d"/>
+  <path d="M180 298 L180 362 L232 330 Z" fill="#0d1117"/>
+
+  <g font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" text-anchor="middle">
+    <text x="195" y="470" font-size="30" font-weight="700" fill="#f0f6fc">Watch it run</text>
+    <text x="195" y="504" font-size="16" fill="#9da7b3">46 seconds · 1440×900 · no cuts</text>
+
+    <g font-size="15" fill="#c9d1d9" text-anchor="start">
+      <circle cx="96" cy="568" r="4" fill="#ff8a3d"/><text x="112" y="573">Sign in and read the day at a glance</text>
+      <circle cx="96" cy="604" r="4" fill="#ff8a3d"/><text x="112" y="609">Stream a sandbox answer, then Stop</text>
+      <circle cx="96" cy="640" r="4" fill="#ff8a3d"/><text x="112" y="645">Review a post-mortem</text>
+      <circle cx="96" cy="676" r="4" fill="#ff8a3d"/><text x="112" y="681">Download its markdown</text>
+    </g>
+
+    <text x="195" y="768" font-size="13" fill="#6e7681" letter-spacing="1.5">CLICK TO PLAY · SAME STACK AS THE STILLS</text>
+  </g>
+</svg>
