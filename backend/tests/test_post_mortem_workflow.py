@@ -11,13 +11,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from conftest import TEST_USER_PASSWORD
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
 from app.core.rbac import Role
 from app.db.session import SessionLocal
 from app.main import app
-from tests.conftest import TEST_USER_PASSWORD
 
 ALERT = {
     "source": "kubernetes",

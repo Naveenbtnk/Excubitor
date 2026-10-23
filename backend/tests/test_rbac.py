@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 import pytest
+from conftest import TEST_USER_PASSWORD
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.exc import IntegrityError
 
@@ -19,7 +20,6 @@ from app.db.session import SessionLocal
 from app.main import app
 from app.models import Alert, User
 from app.schemas.users import PASSWORD_MIN_LENGTH
-from tests.conftest import TEST_USER_PASSWORD
 
 VIEWER = "viewer@cloudops.local"
 OPERATOR = "operator@cloudops.local"
