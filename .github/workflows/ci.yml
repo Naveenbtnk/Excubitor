@@ -60,11 +60,12 @@ jobs:
         working-directory: backend
         run: ruff check app tests alembic
 
-      # Collection runs on its own so an import-time failure names the module under a
-      # step of its own, instead of appearing after forty silent dots in the suite.
+      # Collection gets its own step, and the same invocation the suite runs under:
+      # `python -m pytest` puts the working directory on sys.path, so an import that
+      # only resolves that way would pass here and fail in Tests below.
       - name: Collect tests
         working-directory: backend
-        run: python -m pytest --collect-only -q
+        run: pytest -q --collect-only
 
       - name: Tests
         working-directory: backend
