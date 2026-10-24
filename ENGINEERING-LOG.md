@@ -104,13 +104,35 @@ a FastAPI dependency on every data route, not by hiding buttons.
 
 ### Verification as it stands
 
-- `ruff check app tests` — clean.
-- `pytest -q` — **325 passing**, against a real PostgreSQL/pgvector and Redis. The suite creates
-  and migrates its own `cloudops_ai_test` database, truncates between tests, and swaps in a
-  deterministic offline provider, so no test spends provider quota.
+- `ruff check app tests alembic` — clean.
+- `pytest -q` — **325 passing**, against a real PostgreSQL/pgvector and Redis. **52 s** for the
+  `Tests` step on GitHub Actions, about 1 m 45 s on the workstation the code is written on. The
+  suite creates and migrates its own `cloudops_ai_test` database, truncates between tests, and
+  swaps in a deterministic offline provider, so no test spends provider quota.
 - `npm run test` — **103 passing** across 14 files (Vitest and React Testing Library).
 - `tsc --noEmit` and `next build` — clean.
+- `npm audit --omit=dev --audit-level=high` — passes, with two moderate findings deliberately
+  left in place; see the advisory note below.
 - The browser checks recorded below were made against the production Next build, not `next dev`.
+
+### A green build went red with no change to this repository
+
+Three advisories published after the previous run covered `next 16.0.0 - 16.4.0`: an
+unauthenticated RCE in the Image Optimization API, a DoS in App Router Server Actions, and an RCE
+in `use cache` functions returning typed arrays. The audit gate failed on `main` while every test
+still passed. The fix was forward — 16.4.3 sits inside the declared `^16.3.8` range, so only the
+lockfile moved and no dependency was downgraded to silence a scanner.
+
+What the application actually exercises: there is no `next/image` import, no `images` key in
+`next.config.js`, no `use cache` directive and no `'use server'` action anywhere in `frontend/`.
+Two of the three paths therefore have nothing of ours behind them. The image optimizer is
+framework surface rather than app surface — the `/api/*` rewrite does not gate it — so not
+importing it lowers the exposure without removing it, which is why the version was bumped rather
+than the finding argued with. The two moderate `postcss-selector-parser` findings through
+`@tailwindcss/typography` remain on purpose: the only published fix is a forced downgrade to
+0.5.4, the third time that trade has been offered and declined. Dependabot is now configured for
+security alerts on both ecosystems, because an advisory database is the one input to CI that this
+repository does not control.
 
 ## 3. Remaining work
 

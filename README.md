@@ -111,9 +111,9 @@ The decisions a reviewer would otherwise have to reverse-engineer, and the reaso
 
 | | |
 | --- | --- |
-| **Backend** | **325 tests**, `pytest -q` in ~1 m 45 s — unit tests plus integration tests against a real PostgreSQL 16 + pgvector and a real Redis. |
+| **Backend** | **325 tests**, `pytest -q` in **52 s on CI** (~1 m 45 s on a local workstation) — unit tests plus integration tests against a real PostgreSQL 16 + pgvector and a real Redis. |
 | **Frontend** | **103 tests** across 14 files (`vitest run`), plus `tsc --noEmit` and a production `next build`. |
-| **CI** | One workflow, three jobs. Five checks block a commit from a green build: `ruff`, `pytest`, `tsc`, `vitest`, and `npm audit --omit=dev --audit-level=high`; the Docker images build only after all of them pass. |
+| **CI** | One workflow, three jobs. Five checks block a commit from a green build: `ruff`, `pytest`, `tsc`, `vitest`, and `npm audit --omit=dev --audit-level=high`; the Docker images build only after all of them pass. That last gate reads a live advisory database, so a build can go red with no change to this repository — Dependabot's security updates are enabled for both ecosystems for exactly that reason. |
 
 ```bash
 # Backend: lint, then the full suite (needs PostgreSQL on 5434 — see docs/development.md)
