@@ -100,6 +100,15 @@ and a `redis:7-alpine` service container, and cancels superseded runs on the sam
 | Frontend | `npm ci`, `tsc --noEmit`, `vitest run`, `npm audit --omit=dev --audit-level=high`, then `next build` with `BACKEND_URL` set (Next evaluates `rewrites()` at build time) |
 | Docker | Builds both images with buildx and the GitHub Actions layer cache, and publishes neither |
 
+CI runs on Ubuntu only, and that is a documented limitation rather than an oversight. A second
+backend job on a Windows runner was considered: the project is developed on Windows and verified
+on Linux, and a matrix is the check that catches the difference. GitHub-hosted Windows runners
+cannot run service containers — GitHub requires an Ubuntu runner for `services:`, or a self-hosted
+Linux runner with Docker — so the pgvector and Redis the suite needs are not available to a
+Windows job. A Windows job without them would skip the integration tests that distinguish the
+platforms and report a green build it had not earned, so the Windows side is covered instead by
+running the same `pytest -q` against the compose services on a Windows workstation.
+
 The audit step blocks on high and critical findings only. Two moderate findings remain in
 `@tailwindcss/typography -> postcss-selector-parser`, whose only "fix" is a forced downgrade of
 the plugin to 0.5.4 — the same kind of downgrade the project already rejected when it moved to
