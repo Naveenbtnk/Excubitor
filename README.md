@@ -120,7 +120,7 @@ The decisions a reviewer would otherwise have to reverse-engineer, and the reaso
 cd backend
 # Windows PowerShell: .venv\Scripts\Activate.ps1
 source .venv/bin/activate
-ruff check app tests && pytest -q
+ruff check app tests alembic && pytest -q
 
 # Frontend: types, tests, production build
 cd frontend && npm run typecheck && npm test && npm run build

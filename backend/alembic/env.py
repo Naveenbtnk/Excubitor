@@ -1,13 +1,17 @@
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from alembic import context
 from app.core.config import settings
 from app.db.base import Base
-from app.models import Alert, Incident, PostMortem, RunbookChunk, User
+
+# Imported for their side effect, not for a name: each model registers its table on
+# Base.metadata, and autogenerate compares against that metadata. Dropping the import
+# makes `alembic revision --autogenerate` propose dropping every table.
+from app.models import Alert, Incident, PostMortem, RunbookChunk, User  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

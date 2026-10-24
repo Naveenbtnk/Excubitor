@@ -58,7 +58,7 @@ jobs:
 
       - name: Lint
         working-directory: backend
-        run: ruff check app tests
+        run: ruff check app tests alembic
 
       # Collection runs on its own so an import-time failure names the module under a
       # step of its own, instead of appearing after forty silent dots in the suite.

@@ -4,9 +4,10 @@ Revision ID: 202609290001
 Revises:
 Create Date: 2026-09-29
 """
-from alembic import op
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
+
+from alembic import op
 
 revision = "202609290001"
 down_revision = None
@@ -57,7 +58,13 @@ def upgrade() -> None:
     op.create_table(
         "post_mortems",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("incident_id", sa.Integer(), sa.ForeignKey("incidents.id", ondelete="CASCADE"), unique=True, nullable=False),
+        sa.Column(
+            "incident_id",
+            sa.Integer(),
+            sa.ForeignKey("incidents.id", ondelete="CASCADE"),
+            unique=True,
+            nullable=False,
+        ),
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )
@@ -71,7 +78,10 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )
     op.create_index("ix_runbook_chunks_title", "runbook_chunks", ["title"])
-    op.execute("CREATE INDEX ix_runbook_chunks_embedding ON runbook_chunks USING hnsw (embedding vector_cosine_ops)")
+    op.execute(
+        "CREATE INDEX ix_runbook_chunks_embedding ON runbook_chunks "
+        "USING hnsw (embedding vector_cosine_ops)"
+    )
 
 
 def downgrade() -> None:

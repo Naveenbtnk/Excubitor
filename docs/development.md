@@ -36,7 +36,7 @@ npm run dev
 cd backend
 # Windows PowerShell: .venv\Scripts\Activate.ps1
 source .venv/bin/activate
-ruff check app tests
+ruff check app tests alembic
 pytest -q
 
 cd ../frontend
@@ -96,7 +96,7 @@ and a `redis:7-alpine` service container, and cancels superseded runs on the sam
 
 | Job | What it runs |
 | --- | --- |
-| Backend | `ruff check app tests`, then `pytest -q` against the service containers |
+| Backend | `ruff check app tests alembic`, a `--collect-only` pass, then `pytest -q --tb=short` against the service containers |
 | Frontend | `npm ci`, `tsc --noEmit`, `vitest run`, `npm audit --omit=dev --audit-level=high`, then `next build` with `BACKEND_URL` set (Next evaluates `rewrites()` at build time) |
 | Docker | Builds both images with buildx and the GitHub Actions layer cache, and publishes neither |
 

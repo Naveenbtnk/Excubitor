@@ -23,8 +23,9 @@ Create Date: 2026-10-09
 """
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision = "202610090001"
 down_revision = "202610080002"
@@ -60,7 +61,8 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=20), nullable=False, server_default="draft"),
     )
     op.add_column(
-        "post_mortems", sa.Column("author", sa.String(length=180), nullable=False, server_default="")
+        "post_mortems",
+        sa.Column("author", sa.String(length=180), nullable=False, server_default=""),
     )
     op.add_column(
         "post_mortems",
@@ -86,7 +88,9 @@ def upgrade() -> None:
 
     # See the note above: what people can already read stays readable.
     op.execute("UPDATE post_mortems SET status = 'published', published_at = created_at")
-    op.create_check_constraint("ck_post_mortems_status", "post_mortems", f"status IN ({STATUS_LIST})")
+    op.create_check_constraint(
+        "ck_post_mortems_status", "post_mortems", f"status IN ({STATUS_LIST})"
+    )
     op.create_index("ix_post_mortems_status", "post_mortems", ["status"])
 
     op.create_table(
@@ -110,7 +114,9 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=20), nullable=False, server_default="open"),
         sa.Column("position", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint(f"status IN ({ACTION_STATUS_LIST})", name="ck_post_mortem_actions_status"),
+        sa.CheckConstraint(
+            f"status IN ({ACTION_STATUS_LIST})", name="ck_post_mortem_actions_status"
+        ),
     )
     op.create_index(
         "ix_post_mortem_actions_post_mortem_id", "post_mortem_actions", ["post_mortem_id"]
