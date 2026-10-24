@@ -34,8 +34,10 @@ npm run dev
 
 ```bash
 cd backend
-.venv\Scripts\python -m ruff check app tests
-.venv\Scripts\python -m pytest
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+source .venv/bin/activate
+ruff check app tests
+pytest -q
 
 cd ../frontend
 npm run typecheck
@@ -43,6 +45,10 @@ npm test
 npm run build
 npm audit --omit=dev --audit-level=high
 ```
+
+Bare `pytest -q` is the canonical form, not `python -m pytest`: the `-m` form puts the working
+directory on `sys.path`, which can hide an import that fails once the package is installed the way
+CI installs it.
 
 The backend suite is a mix of unit tests and integration tests. The integration tests need a
 reachable PostgreSQL/pgvector server: they create and migrate an isolated `cloudops_ai_test`
@@ -54,7 +60,7 @@ cd backend
 docker compose -f ../compose.yaml up -d db
 # PowerShell
 $env:TEST_DATABASE_URL = "postgresql+asyncpg://cloudops:cloudops@localhost:5434/cloudops_ai_test"
-.venv\Scripts\python -m pytest
+pytest -q
 ```
 
 The suite replaces the LLM provider with a deterministic offline fake, so tests never call a

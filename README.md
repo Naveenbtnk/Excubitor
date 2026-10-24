@@ -117,7 +117,10 @@ The decisions a reviewer would otherwise have to reverse-engineer, and the reaso
 
 ```bash
 # Backend: lint, then the full suite (needs PostgreSQL on 5434 — see docs/development.md)
-cd backend && .venv/Scripts/python -m ruff check app tests && .venv/Scripts/python -m pytest -q
+cd backend
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+source .venv/bin/activate
+ruff check app tests && pytest -q
 
 # Frontend: types, tests, production build
 cd frontend && npm run typecheck && npm test && npm run build
