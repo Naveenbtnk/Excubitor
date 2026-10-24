@@ -1,0 +1,17 @@
+# The audit gate in CI reads a live advisory database, so a build can go red with no
+# change to this repository. Security updates only, and `open-pull-requests-limit: 0`
+# keeps it that way: Dependabot raises alerts for vulnerable dependencies instead of
+# opening version-bump pull requests. The CI gate stays the thing that enforces it.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
